@@ -7,11 +7,13 @@ Built with love by Moon Dev 🚀
 Using the Rich library for gorgeous terminal output
 
 Usage:
-  python 02_positions.py              # All symbols - top 50 across everything
-  python 02_positions.py BTC          # BTC positions only (1,085 positions, $1.9B)
-  python 02_positions.py ETH          # ETH positions only (620 positions, $2.7B)
-  python 02_positions.py HYPE         # HYPE positions only (386 positions, $528M)
-  python 02_positions.py --list       # Show all 148 available symbols
+  python 02_positions.py              # All symbols - top 50 (crypto + HIP-3 combined)
+  python 02_positions.py --crypto     # CRYPTO ONLY positions (BTC, ETH, SOL, HYPE, etc.)
+  python 02_positions.py --hip3       # HIP-3 ONLY positions (stocks, commodities, indices, FX)
+  python 02_positions.py BTC          # BTC positions only
+  python 02_positions.py ETH          # ETH positions only
+  python 02_positions.py HYPE         # HYPE positions only
+  python 02_positions.py --list       # Show all 182 available symbols (134 crypto + 48 HIP-3)
 """
 
 import sys
@@ -485,15 +487,27 @@ def main():
     # Parse command-line arguments
     symbol = None
     show_list = False
+    market_filter = None  # None = all, 'crypto' = crypto only, 'hip3' = HIP-3 only
 
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if arg.lower() == '--list' or arg.lower() == '-l':
             show_list = True
+        elif arg.lower() == '--crypto':
+            market_filter = 'crypto'
+        elif arg.lower() == '--hip3':
+            market_filter = 'hip3'
         else:
             symbol = arg.upper()
 
-    console.print(create_banner(symbol))
+    # Build banner title based on filter
+    banner_symbol = symbol
+    if market_filter == 'crypto':
+        banner_symbol = 'CRYPTO'
+    elif market_filter == 'hip3':
+        banner_symbol = 'HIP-3'
+
+    console.print(create_banner(banner_symbol))
 
     # Initialize API
     console.print("[bold cyan]🌙 Moon Dev: Initializing API...[/bold cyan]")
@@ -517,7 +531,7 @@ def main():
         display_symbols_list(api)
         return
 
-    # Fetch positions data
+    # Fetch positions data based on filter
     if symbol:
         console.print(f"[bold magenta]📡 Fetching {symbol} positions...[/bold magenta]")
         all_data = api.get_all_positions()
@@ -532,8 +546,14 @@ def main():
                 return
         else:
             positions_data = {}
+    elif market_filter == 'crypto':
+        console.print("[bold magenta]📡 Moon Dev: Fetching CRYPTO-ONLY positions (no HIP-3)...[/bold magenta]")
+        positions_data = api.get_crypto_positions()
+    elif market_filter == 'hip3':
+        console.print("[bold magenta]📡 Moon Dev: Fetching HIP-3-ONLY positions (stocks, commodities, indices, FX)...[/bold magenta]")
+        positions_data = api.get_hip3_positions()
     else:
-        console.print("[bold magenta]📡 Fetching all positions...[/bold magenta]")
+        console.print("[bold magenta]📡 Fetching all positions (crypto + HIP-3 combined)...[/bold magenta]")
         positions_data = api.get_positions()
 
     # Create and display stats panels side by side

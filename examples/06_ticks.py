@@ -215,8 +215,8 @@ def main():
                 tick_table.add_column("Chg", justify="right", width=10)
                 prev_price = None
                 for tick in recent_ticks:
-                    price = tick.get('price', 0)
-                    timestamp = tick.get('datetime', tick.get('timestamp', ''))
+                    price = tick.get('p', tick.get('price', 0))
+                    timestamp = tick.get('dt', tick.get('datetime', tick.get('timestamp', '')))
                     try:
                         if isinstance(timestamp, str):
                             dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))

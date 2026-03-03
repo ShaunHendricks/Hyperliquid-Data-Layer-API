@@ -70,7 +70,7 @@ This data layer gives you access to everything Wall Street kept hidden:
 | **HIP3 Liquidations** | Stocks, Commodities, Indices & FX liquidations (TSLA, GOLD, XYZ100, EUR) |
 | **HIP3 Market Data (NEW!)** | Multi-dex tick data: 51 symbols across xyz, flx, hyna, km |
 | **Position Snapshots** | Track positions within 15% of liquidation (BTC, ETH, SOL, XRP, HYPE) |
-| **Whale Positions** | Track positions for any of 148 symbols (BTC: $1.9B, ETH: $2.7B, HYPE: $528M) |
+| **Whale Positions** | Track positions for any of 182 symbols - crypto AND HIP-3 separately! |
 | **Buyer Tracking** | $5k+ buyers on HYPE/SOL/XRP/ETH - accumulation signals |
 | **Smart Money Rankings** | Top 100 profitable traders vs Bottom 100 |
 | **Trading Signals** | Know when smart money is buying or selling |
@@ -137,7 +137,7 @@ Every example is a standalone Python script with beautiful terminal output. Run 
 | File | What It Shows |
 |------|---------------|
 | `01_liquidations.py` | Real-time liquidation heatmaps, top liqs, long/short breakdowns |
-| `02_positions.py` | Whale positions for any symbol (148 symbols! Use: `02_positions.py BTC`) |
+| `02_positions.py` | Whale positions - crypto & HIP-3 SEPARATE! (182 symbols! Use: `02_positions.py BTC`) |
 | `03_whales.py` | Whale addresses, recent trades, smart money moves |
 | `04_events.py` | Live blockchain events, transfers, swaps, deposits |
 | `05_contracts.py` | High-value contracts, activity tracking |
@@ -327,6 +327,42 @@ The all-liquidations API combines data from Hyperliquid, Binance, Bybit, and OKX
 | `30d.json` | Last 30 days |
 
 **Performance:** Split architecture achieves 5-second cycles vs 150-second legacy - 29x faster data freshness.
+
+---
+
+## Separate Crypto vs HIP-3 Positions
+
+Positions are now cleanly separated - no more mixing crypto perps with stocks and commodities!
+
+### Python SDK
+
+```python
+from api import MoonDevAPI
+api = MoonDevAPI()
+
+# CRYPTO ONLY - BTC, ETH, SOL, HYPE, etc. (134 symbols)
+crypto_positions = api.get_crypto_positions()          # Top positions, crypto only
+all_crypto = api.get_all_crypto_positions()            # All 134 crypto symbols
+
+# HIP-3 ONLY - Stocks, Commodities, Indices, FX (48 symbols)
+hip3_positions = api.get_hip3_positions()              # Top positions, HIP-3 only
+all_hip3 = api.get_all_hip3_positions()                # All 48 HIP-3 symbols
+
+# Combined (original behavior - both mixed)
+all_positions = api.get_positions()                    # Top 50 across everything
+all_data = api.get_all_positions()                     # All 182 symbols
+```
+
+### Command Line
+
+```bash
+python examples/02_positions.py --crypto    # Crypto only
+python examples/02_positions.py --hip3      # HIP-3 only (stocks, commodities, etc.)
+python examples/02_positions.py             # Combined (default)
+python examples/02_positions.py BTC         # Specific symbol
+```
+
+**How it works:** HIP-3 symbols use a `dex:ticker` format (e.g., `xyz:GOLD`, `cash:TSLA`, `km:USA500`). The SDK filters based on this prefix so you always get clean, separated data.
 
 ---
 

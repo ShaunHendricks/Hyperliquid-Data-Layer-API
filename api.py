@@ -10,8 +10,13 @@ CORE:
 - /health                               - Service health check (no auth)
 - /api/liquidations/{timeframe}.json    - Liquidation data (10m, 1h, 4h, 12h, 24h, 2d, 7d, 14d, 30d)
 - /api/liquidations/stats.json          - Aggregated liquidation stats
-- /api/positions.json                   - Top 50 longs/shorts across ALL symbols (updates every 1s)
-- /api/positions/all.json               - All 148 symbols with top 50 positions each (500KB, updates every 60s)
+- /api/positions.json                   - Top 50 longs/shorts across ALL symbols (crypto + HIP-3 combined, updates every 1s)
+- /api/positions/all.json               - All 182 symbols with top 50 positions each (crypto + HIP-3 combined, updates every 60s)
+  SDK Methods for SEPARATE access:
+  - get_crypto_positions()              - Crypto-only positions (BTC, ETH, SOL, HYPE, etc.)
+  - get_hip3_positions()                - HIP-3-only positions (xyz:GOLD, cash:TSLA, etc.)
+  - get_all_crypto_positions()          - All crypto symbols only (134 symbols)
+  - get_all_hip3_positions()            - All HIP-3 symbols only (48 symbols)
 - /api/whales.json                      - Recent whale trades ($25k+)
 - /api/whale_addresses.txt              - Plain text whale address list
 - /api/events.json                      - Real-time blockchain events
@@ -145,18 +150,79 @@ class MoonDevAPI:
 
     # ==================== POSITIONS ====================
     def get_positions(self):
-        """Get large positions near liquidation ($200k+) - top 50 across ALL symbols"""
+        """Get large positions near liquidation ($200k+) - top 50 across ALL symbols (crypto + HIP-3 combined)"""
         response = self._get("/api/positions.json")
         return response.json()
 
     def get_all_positions(self):
-        """Get ALL positions for all 148 symbols - top 50 longs/shorts per symbol
+        """Get ALL positions for all symbols - top 50 longs/shorts per symbol (crypto + HIP-3 combined)
 
         Returns dict with symbols key containing all symbol data.
         Access specific symbol: data['symbols']['BTC'], data['symbols']['HYPE'], etc.
+        HIP-3 symbols have a colon prefix: data['symbols']['xyz:GOLD'], data['symbols']['cash:TSLA'], etc.
         """
         response = self._get("/api/positions/all.json")
         return response.json()
+
+    def get_crypto_positions(self):
+        """Get large CRYPTO-ONLY positions near liquidation - filters out HIP-3 symbols
+
+        Moon Dev's separate crypto position feed - only Hyperliquid perp symbols like BTC, ETH, SOL, HYPE, etc.
+        """
+        data = self.get_positions()
+        if not isinstance(data, dict):
+            return data
+        # Filter out HIP-3 symbols (they have ':' in the coin name like xyz:GOLD, cash:TSLA)
+        data['longs'] = [p for p in data.get('longs', []) if ':' not in p.get('coin', '')]
+        data['shorts'] = [p for p in data.get('shorts', []) if ':' not in p.get('coin', '')]
+        data['total_longs'] = len(data['longs'])
+        data['total_shorts'] = len(data['shorts'])
+        data['total_positions'] = data['total_longs'] + data['total_shorts']
+        return data
+
+    def get_hip3_positions(self):
+        """Get large HIP-3-ONLY positions near liquidation - stocks, commodities, indices, FX
+
+        Moon Dev's separate HIP-3 position feed - only HIP-3 symbols like xyz:GOLD, cash:TSLA, xyz:NVDA, etc.
+        Dex prefixes: xyz (stocks/commodities), cash (stocks/commodities), flx, hyna, km (indices)
+        """
+        data = self.get_positions()
+        if not isinstance(data, dict):
+            return data
+        # Filter to only HIP-3 symbols (they have ':' in the coin name)
+        data['longs'] = [p for p in data.get('longs', []) if ':' in p.get('coin', '')]
+        data['shorts'] = [p for p in data.get('shorts', []) if ':' in p.get('coin', '')]
+        data['total_longs'] = len(data['longs'])
+        data['total_shorts'] = len(data['shorts'])
+        data['total_positions'] = data['total_longs'] + data['total_shorts']
+        return data
+
+    def get_all_crypto_positions(self):
+        """Get ALL crypto-only positions - filters out HIP-3, returns only Hyperliquid perp symbols
+
+        Returns dict with symbols key containing only crypto symbol data (BTC, ETH, SOL, HYPE, etc.)
+        """
+        data = self.get_all_positions()
+        if not isinstance(data, dict) or 'symbols' not in data:
+            return data
+        crypto_symbols = {k: v for k, v in data['symbols'].items() if ':' not in k}
+        data['symbols'] = crypto_symbols
+        data['total_symbols'] = len(crypto_symbols)
+        return data
+
+    def get_all_hip3_positions(self):
+        """Get ALL HIP-3-only positions - stocks, commodities, indices, FX from all dexes
+
+        Returns dict with symbols key containing only HIP-3 symbol data.
+        Symbols use dex:ticker format: xyz:GOLD, cash:TSLA, xyz:NVDA, km:USA500, etc.
+        """
+        data = self.get_all_positions()
+        if not isinstance(data, dict) or 'symbols' not in data:
+            return data
+        hip3_symbols = {k: v for k, v in data['symbols'].items() if ':' in k}
+        data['symbols'] = hip3_symbols
+        data['total_symbols'] = len(hip3_symbols)
+        return data
 
     # ==================== WHALES ====================
     def get_whales(self):
@@ -875,6 +941,20 @@ class MoonDevAPI:
             timeframe: 10m, 1h, 4h, 12h, 24h, 2d, 7d, 14d, 30d
         """
         response = self._get(f"/api/binance_liquidations/{timeframe}.json")
+        return response.json()
+
+    def get_binance_liquidation_stats(self):
+        """
+        Get aggregated Binance Futures liquidation statistics.
+
+        Returns:
+            dict with:
+                - total_count: Total liquidations
+                - total_volume: Total USD volume
+                - long_count / short_count: By side
+                - long_volume / short_volume: USD volume by side
+        """
+        response = self._get("/api/binance_liquidations/stats.json")
         return response.json()
 
     def get_bybit_liquidations(self, timeframe="1h"):
