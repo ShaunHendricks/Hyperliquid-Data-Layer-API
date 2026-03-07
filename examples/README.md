@@ -30,7 +30,8 @@ Each file in this folder is a standalone Python script that demonstrates one sec
 | `20_hip3_liquidations.py` | HIP3 Liqs | Stocks, Commodities, Indices & FX liquidations |
 | `21_hip3_market_data.py` | HIP3 Data | OHLCV candles & tick data for 33 TradFi assets |
 | `24_position_snapshots.py` | Position Snapshots | Positions near liquidation - squeeze signals |
-| `25_ai_chat.py` | AI Chat | **NEW!** OpenAI-compatible AI API - drop-in replacement |
+| `25_ai_chat.py` | AI Chat | OpenAI-compatible AI API - drop-in replacement |
+| `26_hip3_funding.py` | HIP3 Funding | **NEW!** Funding rates for stocks, commodities, ETFs across dexes |
 
 ---
 
@@ -234,6 +235,7 @@ Combines Hyperliquid, Binance, Bybit, OKX with Live + Archive architecture.
 | `GET /api/hlp/market-maker` | Strategy B tracker for BTC/ETH/SOL |
 | `GET /api/hlp/timing` | Hourly/session profitability analysis |
 | `GET /api/hlp/correlation` | Delta-price correlation by coin |
+| `GET /api/hlp/funding/hip3` | HIP3 funding rates (stocks, commodities, ETFs) |
 
 ### AI CHAT API (NEW!)
 
@@ -400,6 +402,7 @@ liq_status = api.get_hlp_liquidator_status()         # Real-time liquidator stat
 market_maker = api.get_hlp_market_maker()            # Strategy B (BTC/ETH/SOL)
 timing = api.get_hlp_timing()                        # Hourly/session profitability
 correlation = api.get_hlp_correlation()              # Delta-price correlation
+hip3_funding = api.get_hlp_funding_hip3()            # HIP3 funding rates (stocks, commodities, ETFs)
 
 # === POSITION SNAPSHOTS ===
 btc_snaps = api.get_position_snapshots("BTC", hours=24)           # BTC positions near liq

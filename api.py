@@ -94,6 +94,7 @@ HLP (HYPERLIQUIDITY PROVIDER) DATA:
 - /api/hlp/market-maker                 - Strategy B tracker for BTC/ETH/SOL
 - /api/hlp/timing                       - Hourly/session profitability analysis
 - /api/hlp/correlation                  - Delta-price correlation by coin
+- /api/hlp/funding/hip3                 - HIP3 funding rates (stocks, commodities, ETFs)
 
 Authentication:
 --------------
@@ -887,6 +888,25 @@ class MoonDevAPI:
                 - current_hold_hours: Hours in current direction
         """
         response = self._get("/api/hlp/flip-stats")
+        return response.json()
+
+    def get_hlp_funding_hip3(self):
+        """
+        Get HIP3 funding rate analysis for tokenized assets (stocks, commodities, ETFs).
+
+        Returns funding rates across xyz and cash dexes with top positive/negative,
+        tracked symbol rates, and 24h history.
+
+        Returns:
+            dict with:
+                - top_positive_funding: Top 10 highest funding rate symbols
+                - top_negative_funding: Top 10 lowest funding rate symbols
+                - current_rates: Rates for tracked HIP3 symbols (GOLD, TSLA, NVDA, etc.)
+                - all_rates: Every HIP3 symbol with rate, annualized %, mark price, OI
+                - history_24h: Up to 100 recent funding rate snapshots
+                - timestamp: Last update time
+        """
+        response = self._get("/api/hlp/funding/hip3")
         return response.json()
 
     # ==================== SMART MONEY ====================
