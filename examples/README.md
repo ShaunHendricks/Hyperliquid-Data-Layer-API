@@ -183,6 +183,91 @@ Combines Hyperliquid, Binance, Bybit, OKX with Live + Archive architecture.
 
 **Categories:** Stocks (22) | Indices (4) | Commodities (4) | FX (2) | Crypto (12)
 
+### HIP3 TICK DATA & CANDLES (NEW! — Top 10 by Volume)
+
+Live tick collection for the top 10 HIP3 symbols by 24h volume across xyz, cash, and flx dexes. Volume ranking refreshes every 5 minutes. 30-day data retention. Candles are computed server-side from stored ticks.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/hip3/candles/symbols` | List all currently tracked HIP3 symbols with categories |
+| `GET /api/hip3/ticks/{coin}` | Raw tick data for a HIP3 symbol |
+| `GET /api/hip3/candles/{coin}` | OHLCV candles computed from ticks |
+| `GET /api/hip3/price/{coin}` | Latest price for a single HIP3 symbol |
+| `GET /api/hip3/prices` | All latest prices for all tracked HIP3 symbols |
+
+**Symbol Lookup — three formats work:**
+```bash
+# Bare ticker (auto-resolves to correct dex)
+/api/hip3/ticks/CL?duration=1h
+/api/hip3/candles/SILVER?interval=5m
+/api/hip3/price/NVDA
+
+# Full dex:ticker format
+/api/hip3/ticks/xyz:CL?duration=1h
+/api/hip3/candles/cash:USA500?interval=1h
+
+# Non-xyz dex
+/api/hip3/ticks/cash:USA500?duration=1h
+```
+
+**Tick Parameters:**
+| Param | Default | Description |
+|-------|---------|-------------|
+| `duration` | `1h` | Time window: `10m`, `1h`, `4h`, `24h`, `7d` |
+
+**Candle Parameters:**
+| Param | Default | Description |
+|-------|---------|-------------|
+| `interval` | `5m` | Candle size: `1m`, `5m`, `15m`, `1h`, `4h`, `1d` |
+| `startTime` | auto | Start timestamp (Unix ms) |
+| `endTime` | now | End timestamp (Unix ms) |
+
+**Tick Response:**
+```json
+{
+  "symbol": "cash:USA500",
+  "category": "indices",
+  "market_type": "HIP3",
+  "duration": "1h",
+  "tick_count": 1842,
+  "latest_price": 6780.20,
+  "ticks": [
+    {"t": 1741611600500, "p": 6779.97, "dt": "2026-03-10T13:12:33+00:00"}
+  ]
+}
+```
+
+**Candle Response:**
+```json
+{
+  "t": 1741611600000, "T": 1741611899999,
+  "s": "SILVER", "i": "5m",
+  "o": "89.28", "h": "89.30", "l": "89.25", "c": "89.28",
+  "v": "0", "n": 42
+}
+```
+
+**All Prices Response:**
+```json
+{
+  "generated_at": "2026-03-10T13:05:15+00:00",
+  "market_type": "HIP3",
+  "mode": "top_10_by_volume",
+  "dexes": ["xyz", "cash", "flx"],
+  "prices": {
+    "cash:USA500": {"dex": "cash", "ticker": "USA500", "price": 6780.60, "category": "indices"},
+    "cash:NVDA":   {"dex": "cash", "ticker": "NVDA",   "price": 182.02,  "category": "stocks"}
+  }
+}
+```
+
+**Key notes:**
+- **Top 10 by volume** — symbol list refreshes every 5 min based on 24h notional volume
+- **30-day retention** — historical data goes back up to 30 days
+- **Multi-dex** — symbols span xyz, cash, and flx dexes
+- **~500ms tick resolution** — polling interval for tick collection
+- **Candles are server-computed** — built from stored tick data, not proxied from Hyperliquid
+
 ### TICK DATA
 
 | Endpoint | Description |
@@ -338,6 +423,15 @@ tsla_ticks = api.get_hip3_ticks("xyz", "tsla")       # xyz:TSLA tick data
 btc_ticks = api.get_hip3_ticks("hyna", "btc")        # hyna:BTC tick data
 gold_ticks = api.get_hip3_ticks("xyz", "gold")       # xyz:GOLD tick data
 us500_ticks = api.get_hip3_ticks("km", "us500")      # km:US500 tick data
+
+# === HIP3 TICK DATA & CANDLES (Top 10 by Volume) ===
+hip3_symbols = api.get_hip3_candle_symbols()          # List tracked symbols
+hip3_raw = api.get_hip3_raw_ticks("CL", duration="1h")        # Raw ticks (bare ticker)
+hip3_raw = api.get_hip3_raw_ticks("cash:USA500", duration="4h") # Raw ticks (dex:ticker)
+hip3_candles = api.get_hip3_candles("SILVER", interval="5m")   # OHLCV candles
+hip3_candles = api.get_hip3_candles("cash:USA500", interval="1h") # Candles with dex prefix
+hip3_price = api.get_hip3_price("NVDA")               # Single symbol price
+hip3_prices = api.get_hip3_all_prices()                # All tracked prices
 
 # === POSITIONS & WHALES ===
 # Combined (crypto + HIP-3 mixed)

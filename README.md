@@ -68,7 +68,8 @@ This data layer gives you access to everything Wall Street kept hidden:
 | **Liquidations** | See when positions are about to get wiped out - in real-time |
 | **Multi-Exchange Liqs** | Combined liquidations from Hyperliquid, Binance, Bybit, OKX (Live + Archive) |
 | **HIP3 Liquidations** | Stocks, Commodities, Indices & FX liquidations (TSLA, GOLD, XYZ100, EUR) |
-| **HIP3 Market Data (NEW!)** | Multi-dex tick data: 51 symbols across xyz, flx, hyna, km |
+| **HIP3 Market Data** | Multi-dex tick data: 51 symbols across xyz, flx, hyna, km |
+| **HIP3 Tick Data & Candles (NEW!)** | Top 10 by volume: raw ticks, OHLCV candles, prices across xyz, cash, flx |
 | **Position Snapshots** | Track positions within 15% of liquidation (BTC, ETH, SOL, XRP, HYPE) |
 | **Whale Positions** | Track positions for any of 182 symbols - crypto AND HIP-3 separately! |
 | **Buyer Tracking** | $5k+ buyers on HYPE/SOL/XRP/ETH - accumulation signals |
@@ -426,6 +427,60 @@ risky = api.get_position_snapshots("ETH", max_distance_pct=5)
 stats = api.get_position_snapshot_stats(hours=12)
 print(f"Top 10 at risk: {stats['top_10_closest']}")
 ```
+
+---
+
+## HIP3 Tick Data & Candles (NEW!)
+
+Live tick collection for the **top 10 HIP3 symbols by 24h volume** across xyz, cash, and flx dexes. Volume ranking refreshes every 5 minutes. 30-day data retention. Candles are server-computed from stored ticks.
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/hip3/candles/symbols` | List currently tracked symbols with categories |
+| `GET /api/hip3/ticks/{coin}` | Raw tick data (durations: `10m`, `1h`, `4h`, `24h`, `7d`) |
+| `GET /api/hip3/candles/{coin}` | OHLCV candles (intervals: `1m`, `5m`, `15m`, `1h`, `4h`, `1d`) |
+| `GET /api/hip3/price/{coin}` | Latest price for a single symbol |
+| `GET /api/hip3/prices` | All latest prices for all tracked symbols |
+
+**Bare ticker lookups** — pass just `CL` or `USA500` and it resolves to the correct dex automatically. Or use full `dex:ticker` format like `cash:USA500`.
+
+### Python Usage
+
+```python
+from api import MoonDevAPI
+api = MoonDevAPI()
+
+# List what's being tracked right now
+symbols = api.get_hip3_candle_symbols()
+print(symbols['symbols'])  # ['xyz:CL', 'cash:USA500', 'cash:NVDA', ...]
+
+# Raw ticks — bare ticker or dex:ticker
+ticks = api.get_hip3_raw_ticks("USA500", duration="1h")
+print(f"{ticks['tick_count']} ticks, latest: ${ticks['latest_price']}")
+
+# OHLCV candles
+candles = api.get_hip3_candles("SILVER", interval="5m")
+for c in candles[-3:]:
+    print(f"O:{c['o']} H:{c['h']} L:{c['l']} C:{c['c']}")
+
+# Single price
+price = api.get_hip3_price("NVDA")
+print(f"NVDA: ${price['price']}")
+
+# All prices at once
+prices = api.get_hip3_all_prices()
+for sym, data in prices['prices'].items():
+    print(f"{sym}: ${data['price']} ({data['category']})")
+```
+
+### Key Notes
+- **Top 10 by volume** — symbol list refreshes every 5 min based on 24h notional volume
+- **30-day retention** — historical data goes back up to 30 days
+- **Multi-dex** — symbols span xyz, cash, and flx dexes
+- **~500ms tick resolution** — polling interval
+- **Candles are server-computed** — built from stored ticks, not proxied from Hyperliquid
 
 ---
 

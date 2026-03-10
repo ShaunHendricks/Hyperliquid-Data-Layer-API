@@ -53,3 +53,6 @@ logs/
 
 # AI Swarm Agent data (results may contain API responses)
 ai_agents/data/
+
+# Moon Dev's local data viewer
+data_viewer.py

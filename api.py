@@ -1106,6 +1106,78 @@ class MoonDevAPI:
         response = self._get(f"/api/hip3_ticks/{dex.lower()}_{ticker.lower()}.json")
         return response.json()
 
+    # ==================== HIP3 TICK DATA & CANDLES (Top 10 by Volume) ====================
+    # 🌙 Moon Dev — New HIP3 candle/tick endpoints
+
+    def get_hip3_candle_symbols(self):
+        """
+        List all currently tracked HIP3 symbols (top 10 by 24h volume).
+        Refreshes every 5 minutes. Spans xyz, cash, flx dexes.
+
+        Returns:
+            dict with symbols list, count, intervals, by_category
+        """
+        response = self._get("/api/hip3/candles/symbols")
+        return response.json()
+
+    def get_hip3_raw_ticks(self, coin, duration="1h"):
+        """
+        Get raw tick data for a HIP3 symbol from the tick collector.
+
+        Args:
+            coin: Symbol — bare ticker (CL, SILVER) or dex:ticker (cash:USA500)
+            duration: Time window — 10m, 1h, 4h, 24h, 7d
+
+        Returns:
+            dict with symbol, category, tick_count, latest_price, ticks[]
+        """
+        response = self._get(f"/api/hip3/ticks/{coin}", params={"duration": duration})
+        return response.json()
+
+    def get_hip3_candles(self, coin, interval="5m", start_time=None, end_time=None):
+        """
+        Get OHLCV candles for a HIP3 symbol, computed server-side from stored ticks.
+
+        Args:
+            coin: Symbol — bare ticker (SILVER) or dex:ticker (cash:USA500)
+            interval: Candle size — 1m, 5m, 15m, 1h, 4h, 1d
+            start_time: Optional start timestamp (Unix ms)
+            end_time: Optional end timestamp (Unix ms)
+
+        Returns:
+            list of candle dicts with t, T, s, i, o, h, l, c, v, n
+        """
+        params = {"interval": interval}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        response = self._get(f"/api/hip3/candles/{coin}", params=params)
+        return response.json()
+
+    def get_hip3_price(self, coin):
+        """
+        Get latest price for a single HIP3 symbol.
+
+        Args:
+            coin: Symbol — bare ticker (NVDA) or dex:ticker (cash:NVDA)
+
+        Returns:
+            dict with symbol, price, category, market_type, timestamp
+        """
+        response = self._get(f"/api/hip3/price/{coin}")
+        return response.json()
+
+    def get_hip3_all_prices(self):
+        """
+        Get all latest prices for all tracked HIP3 symbols (top 10 by volume).
+
+        Returns:
+            dict with generated_at, market_type, mode, dexes, prices{}
+        """
+        response = self._get("/api/hip3/prices")
+        return response.json()
+
 
 # ==================== TEST SUITE ====================
 def test_all():
