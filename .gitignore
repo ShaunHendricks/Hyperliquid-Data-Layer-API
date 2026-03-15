@@ -56,3 +56,6 @@ ai_agents/data/
 
 # Moon Dev's local data viewer
 data_viewer.py
+
+# Arena (internal - not for public repo)
+arena/

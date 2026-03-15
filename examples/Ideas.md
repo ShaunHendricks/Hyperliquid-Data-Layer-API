@@ -278,6 +278,42 @@ Built with love by Moon Dev
 
 ---
 
+## 29_btc_bulk_liquidations_csv.py - BTC Liquidation Monitor
+
+**Endpoint:** `/api/all_liquidations/10m.json` (filtered to BTC, chopped to 5 min)
+
+1. **5-Minute Liquidation Anticipation** - While the current 5-minute window is playing out, start anticipating the NEXT 5 minutes. If you see a cascade of long liquidations accelerating, the next 5 minutes likely has more long liquidations coming. Use the rate of change in liquidation volume to predict what's about to happen, not just what already happened.
+
+2. **Liquidation Momentum Prediction** - Track liquidation volume per minute within your 5-minute window. If minute 4 has 3x the liquidations of minute 1, momentum is building and the next window will likely be even bigger. If it's decaying, the cascade is exhausting.
+
+3. **Pre-Position for the Next Wave** - When BTC liquidations are one-sided (e.g., all longs getting rekt), the market is likely headed further in that direction short-term. Anticipate the next 5-minute window by looking at the current trend and positioning before the next wave hits.
+
+---
+
+## Moon Dev's 5-Minute BTC Trading Setup
+
+**The Bot:**
+```bash
+python /Users/md/Dropbox/dev/github/Polymarket-Trading-Bots/poly_hyper/easy.py
+```
+
+**Data Sources (run these alongside the bot):**
+```bash
+# BTC positions close to liquidation (1% and 2% zones, refreshes 5s)
+python 30_btc_near_liquidation.py
+
+# BTC liquidation stream across all exchanges (refreshes 5s)
+python 31_btc_liquidation_stream.py
+
+# BTC liquidation monitor + CSV logger (5 min window, refreshes 5s)
+python 29_btc_bulk_liquidations_csv.py
+
+# BTC CVD scanner - order flow, imbalance, divergence alerts (refreshes 5s)
+python examples/32_btc_cvd_scanner.py
+```
+
+---
+
 ## Final Thoughts
 
 Look, all of these ideas might be garbage. Or some might be gold. The point is you have access to data that used to be hidden, and now you can actually test hypotheses instead of just guessing.
