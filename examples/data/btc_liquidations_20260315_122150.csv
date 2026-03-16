@@ -1,5 +1,0 @@
-symbol,side,value,price,quantity,timestamp,order_type,avg_price,order_status,_exchange,exchange
-BTC,LONG,2841.6,71040.0,0.04,1773591420183,LIMIT,71332.1,FILLED,binance,
-BTC,LONG,1419.44,70972.2,0.02,1773591422034,,,,bybit,
-BTC,LONG,142.0948,71047.4,0.002,1773591413213,LIMIT,71334.3,FILLED,binance,
-BTC,LONG,142.09,71047.4,0.002,1773591413213,,,,binance,binance

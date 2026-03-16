@@ -54,6 +54,9 @@ logs/
 # AI Swarm Agent data (results may contain API responses)
 ai_agents/data/
 
+# Example data output (CSVs, etc.) - keep repo clean
+examples/data/
+
 # Moon Dev's local data viewer
 data_viewer.py
 

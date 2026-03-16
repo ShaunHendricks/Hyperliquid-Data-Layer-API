@@ -1,5 +1,0 @@
-exchange,symbol,side,value,price,quantity,timestamp,_exchange,coin,size,value_usd,address,pnl
-binance,BTC,LONG,961.08,73929.3,0.013,1773670988824,binance,,,,,
-binance,BTC,LONG,221.35,73783.5,0.003,1773671064089,binance,,,,,
-binance,BTC,LONG,147.6,73798.4,0.002,1773671056831,binance,,,,,
-,,long,,74058.0,,2026-03-16T14:25:33.624000,hyperliquid,BTC,0.00188,139.23,0x673b836e...,3.4
