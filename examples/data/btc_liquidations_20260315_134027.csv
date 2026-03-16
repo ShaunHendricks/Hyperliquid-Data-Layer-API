@@ -1,0 +1,2 @@
+exchange,symbol,side,value,price,quantity,timestamp,_exchange
+binance,BTC,LONG,284.74,71183.9,0.004,1773596242146,binance

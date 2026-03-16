@@ -1,0 +1,2 @@
+exchange,symbol,side,value,price,quantity,timestamp,_exchange
+bybit,BTC,SHORT,5257.89,73026.3,0.072,1773625820943,bybit

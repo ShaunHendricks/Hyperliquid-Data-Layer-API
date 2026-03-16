@@ -1,0 +1,4 @@
+timestamp,coin,side,size,price,value_usd,address,pnl,_exchange,symbol,value,quantity,order_type,avg_price,order_status,exchange
+2026-03-16T11:00:04.383000,BTC,short,0.01687,73776.0,1244.6,0xdb163fb9...,-13.83,hyperliquid,,,,,,,
+1773659022256,,SHORT,,73985.8,,,,binance,BTC,147.9716,0.002,LIMIT,73689.0,FILLED,
+1773659022256,,SHORT,,73985.8,,,,binance,BTC,147.97,0.002,,,,binance

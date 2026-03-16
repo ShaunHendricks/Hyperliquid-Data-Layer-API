@@ -1,0 +1,2 @@
+exchange,symbol,side,value,price,quantity,timestamp,_exchange
+binance,BTC,SHORT,291.62,72906.2,0.004,1773622132752,binance

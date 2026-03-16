@@ -1,0 +1,3 @@
+symbol,side,value,price,quantity,timestamp,_exchange
+BTC,LONG,11733.36,71983.8,0.163,1773628352944,bybit
+BTC,LONG,7169.13,72342.4,9.91,1773628350271,okx

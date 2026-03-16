@@ -1,0 +1,10 @@
+symbol,side,value,price,quantity,timestamp,_exchange,exchange,order_type,avg_price,order_status,coin,size,value_usd,address,pnl
+BTC,SHORT,36609.46,72208.0,0.507,1773607232944,bybit,,,,,,,,,
+BTC,SHORT,10204.28,71861.1,14.2,1773607232801,okx,,,,,,,,,
+BTC,SHORT,10029.55,72155.0,0.139,1773607233069,binance,binance,,,,,,,,
+BTC,SHORT,10029.545,72155.0,0.139,1773607233069,binance,,LIMIT,71899.6,FILLED,,,,,
+BTC,SHORT,1804.57,72182.6,0.025,1773607234087,binance,binance,,,,,,,,
+BTC,SHORT,1804.5650000000003,72182.6,0.025,1773607234087,binance,,LIMIT,71898.1,FILLED,,,,,
+BTC,SHORT,546.33,71885.1,0.76,1773607234012,okx,,,,,,,,,
+,short,,71744.0,,2026-03-15T20:37:43.513000,hyperliquid,,,,,BTC,0.00341,244.65,0xc76374ea...,-3.55
+BTC,SHORT,143.75,71874.0,0.2,1773607233219,okx,,,,,,,,,

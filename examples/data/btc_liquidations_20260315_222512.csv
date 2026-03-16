@@ -1,0 +1,6 @@
+exchange,symbol,side,value,price,quantity,timestamp,_exchange
+binance,BTC,LONG,794.31,72209.6,0.011,1773627738365,binance
+binance,BTC,LONG,433.34,72222.9,0.006,1773627708353,binance
+binance,BTC,LONG,288.78,72194.2,0.004,1773627780564,binance
+binance,BTC,LONG,144.45,72226.1,0.002,1773627620829,binance
+,BTC,LONG,130.5,72502.7,0.18,1773627707529,okx

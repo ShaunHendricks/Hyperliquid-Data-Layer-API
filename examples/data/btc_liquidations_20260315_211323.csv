@@ -1,0 +1,3 @@
+timestamp,coin,side,size,price,value_usd,address,pnl,_exchange,symbol,value,quantity
+2026-03-16T01:13:14.555000,BTC,long,0.06056,72275.0,4376.97,0x13a2260f...,-53.6,hyperliquid,,,
+1773623589444,,LONG,,71963.0,,,,bybit,BTC,1223.37,0.017
