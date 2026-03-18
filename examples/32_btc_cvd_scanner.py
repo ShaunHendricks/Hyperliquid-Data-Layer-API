@@ -14,7 +14,7 @@ Author: Moon Dev
 import sys
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path so we can import api.py
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,8 +33,10 @@ REFRESH_SECONDS = 5
 SPARKLINE_WIDTH = 40
 CVD_BAR_WIDTH = 30
 
-# Timeframes to pull tick data for multi-TF CVD
-TICK_TIMEFRAMES = ["10m", "1h", "4h", "24h"]
+# 🌙 Moon Dev - Intraday timeframes for 5-min market trading
+# API only has 10m+ ticks and 5m+ imbalance, so we fetch 1h and chop it up
+DISPLAY_TIMEFRAMES = ["1m", "3m", "5m", "10m", "15m"]
+TF_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "10m": 600, "15m": 900}
 
 # Colors
 BULL_COLOR = "bright_green"
@@ -123,6 +125,41 @@ def create_pressure_bar(buy_pct, width=CVD_BAR_WIDTH):
     return bar, f"{buy_pct*100:.1f}%", label, color
 
 
+def slice_ticks_by_time(ticks, seconds):
+    """🌙 Moon Dev - Chop tick data to last N seconds using timestamp field 't'"""
+    if not ticks:
+        return ticks
+    # t field is Unix ms timestamp
+    now_ms = time.time() * 1000
+    cutoff = now_ms - (seconds * 1000)
+    return [t for t in ticks if t.get('t', 0) >= cutoff]
+
+
+def compute_tick_imbalance(ticks):
+    """🌙 Moon Dev - Build buy/sell dollar imbalance from raw ticks using tick rule"""
+    if not ticks or len(ticks) < 2:
+        return {'buy_volume_usd': 0, 'sell_volume_usd': 0, 'net_imbalance_usd': 0, 'imbalance_ratio': 0}
+    buy_vol = 0
+    sell_vol = 0
+    last_direction = 0
+    for i in range(1, len(ticks)):
+        p = ticks[i].get('p', ticks[i].get('price', 0))
+        prev_p = ticks[i-1].get('p', ticks[i-1].get('price', 0))
+        diff = p - prev_p
+        if diff > 0:
+            last_direction = 1
+        elif diff < 0:
+            last_direction = -1
+        if last_direction >= 0:
+            buy_vol += p
+        else:
+            sell_vol += p
+    total = buy_vol + sell_vol
+    net = buy_vol - sell_vol
+    ratio = (net / total) if total > 0 else 0
+    return {'buy_volume_usd': buy_vol, 'sell_volume_usd': sell_vol, 'net_imbalance_usd': net, 'imbalance_ratio': ratio}
+
+
 def compute_tick_cvd(ticks):
     if not ticks or len(ticks) < 2:
         return 0, 0, [], []
@@ -208,20 +245,25 @@ def build_dashboard(api, console, cycle_count):
     output.append(create_legend())
 
     # ==================== FETCH BTC DATA ====================
-    # Tick data across multiple timeframes
+    # 🌙 Moon Dev - Fetch 1h of ticks once, then chop into intraday windows
+    all_ticks = []
+    tick_response = api.get_ticks("BTC", "1h", limit=10000)
+    if tick_response and isinstance(tick_response, dict):
+        all_ticks = tick_response.get('ticks', [])
+
+    # Slice ticks into each display timeframe
     tick_data = {}
-    for tf in TICK_TIMEFRAMES:
-        tick_response = api.get_ticks("BTC", tf, limit=10000)
-        if tick_response and isinstance(tick_response, dict):
-            tick_data[tf] = tick_response.get('ticks', [])
+    for tf in DISPLAY_TIMEFRAMES:
+        tick_data[tf] = slice_ticks_by_time(all_ticks, TF_SECONDS[tf])
 
     # Order flow
     orderflow = api.get_orderflow()
     of_stats = api.get_orderflow_stats()
 
-    # Imbalance across timeframes
+    # Imbalance - API supports 5m, 15m, 1h, 4h, 24h
+    # 🌙 Moon Dev - Fetch 5m and 15m, then we use tick CVD for the rest
     imbalances = {}
-    for tf in ['5m', '15m', '1h', '4h']:
+    for tf in ['5m', '15m']:
         imb = api.get_imbalance(tf)
         if imb:
             imbalances[tf] = imb
@@ -233,9 +275,9 @@ def build_dashboard(api, console, cycle_count):
         btc_price = latest_data.get('prices', {}).get('BTC', 0)
 
     # ==================== BTC PRICE OVERVIEW ====================
-    # Use 1h ticks for the main overview
-    ticks_1h = tick_data.get('1h', [])
-    cvd_1h, chg_1h, deltas_1h, prices_1h = compute_tick_cvd(ticks_1h)
+    # 🌙 Moon Dev - Use 5m ticks for the overview since we're trading 5-min markets
+    ticks_5m = tick_data.get('5m', [])
+    cvd_1h, chg_1h, deltas_1h, prices_1h = compute_tick_cvd(ticks_5m)
 
     overview = Text()
     overview.append("  ₿ BITCOIN  ", style="bold bright_yellow")
@@ -282,7 +324,7 @@ def build_dashboard(api, console, cycle_count):
     mtf_table.add_column("SIGNAL", justify="center", width=16)
     mtf_table.add_column("🌙 VERDICT", justify="center", width=14)
 
-    for tf in TICK_TIMEFRAMES:
+    for tf in DISPLAY_TIMEFRAMES:
         ticks = tick_data.get(tf, [])
         cvd_val, price_chg, deltas, prices = compute_tick_cvd(ticks)
 
@@ -337,8 +379,8 @@ def build_dashboard(api, console, cycle_count):
     if orderflow:
         btc_flow = orderflow.get('by_coin', {}).get('BTC', {})
 
-    # Get BTC dollar volumes from 1h imbalance (the real $ data)
-    btc_imb_1h = imbalances.get('1h', {}).get('by_coin', {}).get('BTC', {})
+    # Get BTC dollar volumes from 5m imbalance (the real $ data for intraday)
+    btc_imb_1h = imbalances.get('5m', {}).get('by_coin', {}).get('BTC', {})
     buy_vol = btc_imb_1h.get('buy_volume_usd', 0)
     sell_vol = btc_imb_1h.get('sell_volume_usd', 0)
     total_vol = buy_vol + sell_vol
@@ -349,7 +391,7 @@ def build_dashboard(api, console, cycle_count):
     bar, pct_str, label, color = create_pressure_bar(buy_pressure)
 
     pressure_text = Text()
-    pressure_text.append("\n  ₿ BTC BUY/SELL PRESSURE (1H)\n\n", style="bold bright_cyan")
+    pressure_text.append("\n  ₿ BTC BUY/SELL PRESSURE (5M)\n\n", style="bold bright_cyan")
     pressure_text.append(f"  BUY  ", style=f"bold {BULL_COLOR}")
     bar_width = CVD_BAR_WIDTH
     filled = int(bar_width * buy_pressure)
@@ -380,75 +422,76 @@ def build_dashboard(api, console, cycle_count):
     output.append(Panel(pressure_text, border_style="bright_cyan", box=box.HEAVY_EDGE, padding=(0, 1)))
 
     # ==================== BTC MULTI-TIMEFRAME DOLLAR IMBALANCE ====================
-    if imbalances:
-        imb_table = Table(
-            title="[bold bright_red]🎯 BTC DOLLAR IMBALANCE BY TIMEFRAME 🎯[/]  [dim]Real $ aggression[/]",
-            box=box.HEAVY_EDGE,
-            border_style="bright_red",
-            header_style="bold bright_white on dark_red",
-            show_lines=True,
-            padding=(0, 1),
-            expand=True,
+    # 🌙 Moon Dev - Compute imbalance from ticks for ALL intraday timeframes
+    imb_table = Table(
+        title="[bold bright_red]🎯 BTC DOLLAR IMBALANCE BY TIMEFRAME 🎯[/]  [dim]Real $ aggression[/]",
+        box=box.HEAVY_EDGE,
+        border_style="bright_red",
+        header_style="bold bright_white on dark_red",
+        show_lines=True,
+        padding=(0, 1),
+        expand=True,
+    )
+    imb_table.add_column("TIMEFRAME", style="bold bright_white", justify="center", width=10)
+    imb_table.add_column("BUY VOL", style=BULL_COLOR, justify="right", width=14)
+    imb_table.add_column("SELL VOL", style=BEAR_COLOR, justify="right", width=14)
+    imb_table.add_column("NET $", justify="right", width=14)
+    imb_table.add_column("BUY ◄══ PRESSURE ══► SELL", justify="center", width=CVD_BAR_WIDTH + 6)
+    imb_table.add_column("BIAS", justify="center", width=14)
+
+    for tf in DISPLAY_TIMEFRAMES:
+        # Use API imbalance data if available (5m, 15m), otherwise compute from ticks
+        api_imb = imbalances.get(tf, {}).get('by_coin', {}).get('BTC', {})
+        if api_imb and api_imb.get('buy_volume_usd', 0) > 0:
+            btc_imb = api_imb
+        else:
+            btc_imb = compute_tick_imbalance(tick_data.get(tf, []))
+
+        buy_vol = btc_imb.get('buy_volume_usd', 0)
+        sell_vol = btc_imb.get('sell_volume_usd', 0)
+        net = btc_imb.get('net_imbalance_usd', buy_vol - sell_vol)
+        ratio = btc_imb.get('imbalance_ratio', 0)
+
+        if net > 0:
+            net_str = f"[{STRONG_BULL if ratio > 0.5 else BULL_COLOR}]+{format_volume(net)}[/]"
+        elif net < 0:
+            net_str = f"[{STRONG_BEAR if ratio < -0.5 else BEAR_COLOR}]{format_volume(net)}[/]"
+        else:
+            net_str = "[dim]$0[/]"
+
+        total = buy_vol + sell_vol
+        buy_pct = (buy_vol / total) if total > 0 else 0.5
+        bar, pct_str, label, color = create_pressure_bar(buy_pct)
+
+        if ratio > 0.5:
+            bias = f"[{STRONG_BULL}]▲▲▲ BUY[/]"
+        elif ratio > 0.2:
+            bias = f"[{BULL_COLOR}]▲▲  BUY[/]"
+        elif ratio > 0.05:
+            bias = f"[{BULL_COLOR}]▲   BUY[/]"
+        elif ratio < -0.5:
+            bias = f"[{STRONG_BEAR}]▼▼▼ SELL[/]"
+        elif ratio < -0.2:
+            bias = f"[{BEAR_COLOR}]▼▼  SELL[/]"
+        elif ratio < -0.05:
+            bias = f"[{BEAR_COLOR}]▼   SELL[/]"
+        else:
+            bias = f"[{NEUTRAL_COLOR}]═   FLAT[/]"
+
+        tf_label = {"1m": "⚡ 1 MIN", "3m": "🔥 3 MIN", "5m": "📊 5 MIN", "10m": "🎯 10 MIN", "15m": "🌊 15 MIN"}.get(tf, tf)
+        imb_table.add_row(
+            tf_label,
+            f"[{BULL_COLOR}]{format_volume(buy_vol)}[/]",
+            f"[{BEAR_COLOR}]{format_volume(sell_vol)}[/]",
+            net_str, bar, bias,
         )
-        imb_table.add_column("TIMEFRAME", style="bold bright_white", justify="center", width=10)
-        imb_table.add_column("BUY VOL", style=BULL_COLOR, justify="right", width=14)
-        imb_table.add_column("SELL VOL", style=BEAR_COLOR, justify="right", width=14)
-        imb_table.add_column("NET $", justify="right", width=14)
-        imb_table.add_column("BUY ◄══ PRESSURE ══► SELL", justify="center", width=CVD_BAR_WIDTH + 6)
-        imb_table.add_column("BIAS", justify="center", width=14)
 
-        for tf in ['5m', '15m', '1h', '4h']:
-            imb = imbalances.get(tf, {})
-            by_coin = imb.get('by_coin', {})
-            btc_imb = by_coin.get('BTC', {})
-
-            buy_vol = btc_imb.get('buy_volume_usd', 0)
-            sell_vol = btc_imb.get('sell_volume_usd', 0)
-            net = btc_imb.get('net_imbalance_usd', buy_vol - sell_vol)
-            ratio = btc_imb.get('imbalance_ratio', 0)
-
-            if net > 0:
-                net_str = f"[{STRONG_BULL if ratio > 0.5 else BULL_COLOR}]+{format_volume(net)}[/]"
-            elif net < 0:
-                net_str = f"[{STRONG_BEAR if ratio < -0.5 else BEAR_COLOR}]{format_volume(net)}[/]"
-            else:
-                net_str = "[dim]$0[/]"
-
-            # Pressure bar
-            total = buy_vol + sell_vol
-            buy_pct = (buy_vol / total) if total > 0 else 0.5
-            bar, pct_str, label, color = create_pressure_bar(buy_pct)
-
-            # Bias
-            if ratio > 0.5:
-                bias = f"[{STRONG_BULL}]▲▲▲ BUY[/]"
-            elif ratio > 0.2:
-                bias = f"[{BULL_COLOR}]▲▲  BUY[/]"
-            elif ratio > 0.05:
-                bias = f"[{BULL_COLOR}]▲   BUY[/]"
-            elif ratio < -0.5:
-                bias = f"[{STRONG_BEAR}]▼▼▼ SELL[/]"
-            elif ratio < -0.2:
-                bias = f"[{BEAR_COLOR}]▼▼  SELL[/]"
-            elif ratio < -0.05:
-                bias = f"[{BEAR_COLOR}]▼   SELL[/]"
-            else:
-                bias = f"[{NEUTRAL_COLOR}]═   FLAT[/]"
-
-            tf_label = {"5m": "⚡ 5 MIN", "15m": "🔥 15 MIN", "1h": "📊 1 HOUR", "4h": "🌊 4 HOUR"}.get(tf, tf)
-            imb_table.add_row(
-                tf_label,
-                f"[{BULL_COLOR}]{format_volume(buy_vol)}[/]",
-                f"[{BEAR_COLOR}]{format_volume(sell_vol)}[/]",
-                net_str, bar, bias,
-            )
-
-        output.append(imb_table)
+    output.append(imb_table)
 
     # ==================== DIVERGENCE ALERTS ====================
     # alerts stored as (text, style, direction) tuples for proper Rich rendering
     alerts = []
-    for tf in TICK_TIMEFRAMES:
+    for tf in DISPLAY_TIMEFRAMES:
         ticks = tick_data.get(tf, [])
         cvd_val, price_chg, deltas, prices = compute_tick_cvd(ticks)
         div_type, signal_text, verdict, signal_color = detect_divergence(price_chg, cvd_val)
@@ -459,19 +502,19 @@ def build_dashboard(api, console, cycle_count):
             else:
                 alerts.append(("DOWN", tf, f"Price UP {price_chg:+.3f}% but sellers aggressive (CVD {cvd_val}) = distribution"))
 
-    # Dollar-level divergence: 5m vs 1h
-    if imbalances.get('5m') and imbalances.get('1h'):
+    # Dollar-level divergence: 5m vs 15m
+    if imbalances.get('5m') and imbalances.get('15m'):
         short_btc = imbalances['5m'].get('by_coin', {}).get('BTC', {})
-        long_btc = imbalances['1h'].get('by_coin', {}).get('BTC', {})
+        long_btc = imbalances['15m'].get('by_coin', {}).get('BTC', {})
         short_ratio = short_btc.get('imbalance_ratio', 0)
         long_ratio = long_btc.get('imbalance_ratio', 0)
         short_net = short_btc.get('net_imbalance_usd', 0)
         long_net = long_btc.get('net_imbalance_usd', 0)
 
         if short_ratio > 0.3 and long_ratio < -0.2:
-            alerts.append(("UP", "5m vs 1h", f"5m buying (+{format_volume(short_net)}) against 1h selling ({format_volume(long_net)}) = reversal attempt"))
+            alerts.append(("UP", "5m vs 15m", f"5m buying (+{format_volume(short_net)}) against 15m selling ({format_volume(long_net)}) = reversal attempt"))
         elif short_ratio < -0.3 and long_ratio > 0.2:
-            alerts.append(("DOWN", "5m vs 1h", f"5m selling ({format_volume(short_net)}) against 1h buying (+{format_volume(long_net)}) = pullback"))
+            alerts.append(("DOWN", "5m vs 15m", f"5m selling ({format_volume(short_net)}) against 15m buying (+{format_volume(long_net)}) = pullback"))
 
     if alerts:
         alert_content = Text()
@@ -518,7 +561,7 @@ def main():
         return
 
     console.print(f"[bold bright_green]  ✅ Moon Dev API connected[/]")
-    console.print(f"[bold bright_yellow]  ₿  Scanning: BTC across {', '.join(TICK_TIMEFRAMES)}[/]")
+    console.print(f"[bold bright_yellow]  ₿  Scanning: BTC across {', '.join(DISPLAY_TIMEFRAMES)}[/]")
     console.print(f"[bold bright_cyan]  🔄 Refresh rate: {REFRESH_SECONDS}s[/]")
     console.print(f"[dim]  📡 Pulling BTC tick data nobody else has access to...[/]\n")
 

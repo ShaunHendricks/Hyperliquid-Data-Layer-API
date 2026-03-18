@@ -284,14 +284,10 @@ def build_dashboard(api, cycle_count, last_csv):
             padding=(0, 1),
             expand=True,
         )
-        tape.add_column("#", style="dim", width=3)
         tape.add_column("EXCHANGE", justify="center", width=14)
         tape.add_column("SIDE", justify="center", width=10)
         tape.add_column("VALUE", style="bold bright_yellow", justify="right", width=14)
-        tape.add_column("PRICE", justify="right", width=14)
-        tape.add_column("QTY", justify="right", width=12)
-        tape.add_column("TIME", style="dim", width=12)
-        tape.add_column("IMPACT", justify="center", width=14)
+        tape.add_column("TIME", style="dim", width=10)
 
         for i, liq in enumerate(all_btc_liqs[:25], 1):
             exchange = liq.get('_exchange', liq.get('exchange', liq.get('source', 'unknown')))
@@ -302,8 +298,6 @@ def build_dashboard(api, cycle_count, last_csv):
             side_display = f"[{BULL_COLOR}]📈 LONG[/]" if is_long(side) else f"[{BEAR_COLOR}]📉 SHORT[/]"
 
             value = get_liq_value(liq)
-            price = float(liq.get('price', liq.get('px', 0)))
-            qty = float(liq.get('quantity', liq.get('sz', liq.get('size', liq.get('qty', liq.get('amount', 0))))))
 
             timestamp = liq.get('timestamp', liq.get('time', liq.get('trade_time', '')))
             time_str = "N/A"
@@ -313,25 +307,10 @@ def build_dashboard(api, cycle_count, last_csv):
                 elif isinstance(timestamp, str) and 'T' in timestamp:
                     time_str = timestamp.split('T')[1].split('.')[0]
 
-            if value >= 1_000_000:
-                impact = "[bold bright_yellow on red] 🐋🐋🐋 MEGA [/]"
-            elif value >= 500_000:
-                impact = "[bold bright_yellow] 🐋🐋 WHALE [/]"
-            elif value >= 100_000:
-                impact = "[bold bright_yellow] 🐋 BIG [/]"
-            elif value >= 50_000:
-                impact = f"[{WARN_COLOR}] ⚡ NOTABLE [/]"
-            else:
-                impact = "[dim] · normal [/]"
-
-            rank = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else str(i)
-            qty_str = f"{qty:,.4f}" if qty < 10 else f"{qty:,.2f}" if qty < 1000 else f"{qty:,.0f}"
-
             tape.add_row(
-                rank, ex_display, side_display,
+                ex_display, side_display,
                 f"[bold]{format_usd(value)}[/]",
-                format_price(price), qty_str,
-                time_str, impact,
+                time_str,
             )
 
         output.append(tape)

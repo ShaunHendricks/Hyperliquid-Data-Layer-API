@@ -117,28 +117,21 @@ def build_position_table(positions, title_str, side_color, header_bg):
     )
     table.add_column("#", style="dim", width=3)
     table.add_column("SIZE", style="bold bright_yellow", justify="right", width=14)
-    table.add_column("ENTRY", justify="right", width=14)
     table.add_column("LIQ PRICE", justify="right", width=14)
     table.add_column("DISTANCE", justify="right", width=10)
-    table.add_column("PnL", justify="right", width=14)
 
     for i, pos in enumerate(positions[:25], 1):
         value = get_val(pos)
-        entry = get_entry(pos)
         liq_price = get_liq(pos)
         dist = get_dist(pos)
-        pnl = get_pnl(pos)
 
         color = distance_color(dist)
-        pnl_str = f"[{BULL_COLOR}]+{format_usd(pnl)}[/]" if pnl >= 0 else f"[{BEAR_COLOR}]{format_usd(pnl)}[/]"
 
         table.add_row(
             str(i),
             format_usd(value),
-            format_price(entry),
             f"[{color}]{format_price(liq_price)}[/]",
             f"[{color}]{dist:.2f}%[/]",
-            pnl_str,
         )
 
     return table
@@ -161,45 +154,33 @@ def build_closest_table(longs, shorts):
     )
     table.add_column("SIDE", justify="center", width=8)
     table.add_column("SIZE", style="bold bright_yellow", justify="right", width=14)
-    table.add_column("ENTRY", justify="right", width=14)
     table.add_column("LIQ PRICE", justify="right", width=14)
     table.add_column("DISTANCE", justify="right", width=10)
-    table.add_column("PnL", justify="right", width=14)
 
     for pos in sorted_longs:
         value = get_val(pos)
-        entry = get_entry(pos)
         liq_price = get_liq(pos)
         dist = get_dist(pos)
-        pnl = get_pnl(pos)
         color = distance_color(dist)
-        pnl_str = f"[{BULL_COLOR}]+{format_usd(pnl)}[/]" if pnl >= 0 else f"[{BEAR_COLOR}]{format_usd(pnl)}[/]"
 
         table.add_row(
             f"[{BULL_COLOR}]📈 LONG[/]",
             format_usd(value),
-            format_price(entry),
             f"[{color}]{format_price(liq_price)}[/]",
             f"[{color}]{dist:.2f}%[/]",
-            pnl_str,
         )
 
     for pos in sorted_shorts:
         value = get_val(pos)
-        entry = get_entry(pos)
         liq_price = get_liq(pos)
         dist = get_dist(pos)
-        pnl = get_pnl(pos)
         color = distance_color(dist)
-        pnl_str = f"[{BULL_COLOR}]+{format_usd(pnl)}[/]" if pnl >= 0 else f"[{BEAR_COLOR}]{format_usd(pnl)}[/]"
 
         table.add_row(
             f"[{BEAR_COLOR}]📉 SHORT[/]",
             format_usd(value),
-            format_price(entry),
             f"[{color}]{format_price(liq_price)}[/]",
             f"[{color}]{dist:.2f}%[/]",
-            pnl_str,
         )
 
     return table
