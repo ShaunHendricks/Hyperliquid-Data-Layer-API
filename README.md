@@ -68,8 +68,8 @@ This data layer gives you access to everything Wall Street kept hidden:
 | **Liquidations** | See when positions are about to get wiped out - in real-time |
 | **Multi-Exchange Liqs** | Combined liquidations from Hyperliquid, Binance, Bybit, OKX (Live + Archive) |
 | **HIP3 Liquidations** | Stocks, Commodities, Indices & FX liquidations (TSLA, GOLD, XYZ100, EUR) |
-| **HIP3 Market Data** | Multi-dex tick data: 51 symbols across xyz, flx, hyna, km |
-| **HIP3 Tick Data & Candles (NEW!)** | Top 10 by volume: raw ticks, OHLCV candles, prices across xyz, cash, flx |
+| **HIP3 Market Data** | Multi-dex coverage: 136+ symbols across 7 dexes (xyz, flx, vntl, hyna, km, cash, para) |
+| **HIP3 Tick Data & Candles (UPDATED!)** | EVERY HIP3 symbol — raw ticks, OHLCV candles, prices — auto-discovers new listings |
 | **Position Snapshots** | Track positions within 15% of liquidation (BTC, ETH, SOL, XRP, HYPE) |
 | **Whale Positions** | Track positions for any of 182 symbols - crypto AND HIP-3 separately! |
 | **Buyer Tracking** | $5k+ buyers on HYPE/SOL/XRP/ETH - accumulation signals |
@@ -125,6 +125,8 @@ python examples/20_hip3_liquidations.py   # HIP3 liqs: stocks, commodities, indi
 python examples/21_hip3_market_data.py    # HIP3 candles & ticks: TSLA, GOLD, EUR, etc.
 python examples/24_position_snapshots.py  # Positions near liquidation (BTC/ETH/SOL/XRP/HYPE)
 python examples/25_ai_chat.py             # AI Chat API - drop-in OpenAI replacement
+python examples/35_ohlcv_data.py         # Open, High, Low, Close, Volume Data (new bars layer)
+python examples/35_btc_tick_stream.py     # Live BTC tick stream + JSONL sink for bots
 ```
 
 That's it. You're now seeing what Wall Street sees.
@@ -160,6 +162,8 @@ Every example is a standalone Python script with beautiful terminal output. Run 
 | `21_hip3_market_data.py` | HIP3 OHLCV candles & tick data for 33 TradFi assets |
 | `24_position_snapshots.py` | Positions within 15% of liquidation - squeeze signals |
 | `25_ai_chat.py` | **NEW!** AI Chat API - OpenAI-compatible drop-in replacement |
+| `35_ohlcv_data.py` | Universe + single-symbol and multi-symbol bars from the new OHLCV layer |
+| `35_btc_tick_stream.py` | Live BTC tick stream with rolling tape + JSONL sink for bots |
 
 See the [examples/README.md](examples/README.md) for the API reference, or visit **https://moondev.com/docs** for the full documentation.
 
@@ -181,6 +185,9 @@ These endpoints replace Hyperliquid's rate-limited API calls. All requests go th
 | `GET /api/candles/{coin}` | `candleSnapshot` | OHLCV candles (1m, 5m, 15m, 1h, 4h, 1d) |
 | `GET /api/candles/symbols` | - | List all 80 tracked symbols |
 | `GET /api/ticks/{symbol}` | - | Raw tick data with custom time windows |
+| `GET /api/universe` | - | Tracked symbol universe plus tick coverage metadata |
+| `GET /api/bars` | - | Bulk OHLCV-style bars for aligned multi-symbol history |
+| `GET /api/bars/{symbol}` | - | OHLCV-style bars for a single symbol |
 
 ### Symbol Discovery
 
@@ -215,6 +222,15 @@ ticks = api.get_ticks("TRUMP", duration="1h")
 ticks = api.get_ticks("DOGE", start_time=1768400000000, end_time=1768486000000)
 ```
 
+MoonDev tick history now supports trade-level size for newly ingested trade-stream data.
+Historical rows collected before the rollout remain price-only.
+Tick APIs now expose `sz` and `side` when available.
+
+Practical guidance:
+- New post-rollout tick rows may include `p`, `sz`, `side`, and `t`
+- Older historical rows may not include `sz` or `side`
+- Clients should treat `sz` as expected for new data and nullable for old data
+
 **Parameters:**
 
 | Param | Default | Description |
@@ -223,6 +239,65 @@ ticks = api.get_ticks("DOGE", start_time=1768400000000, end_time=1768486000000)
 | `limit` | `10000` | Max ticks to return |
 | `startTime` | - | Start time (Unix ms) |
 | `endTime` | - | End time (Unix ms) |
+
+**Tick Response Notes:**
+```json
+{
+  "t": 1736121600123,
+  "p": 73924.5,
+  "sz": 0.125,
+  "side": "B"
+}
+```
+
+- `p`: trade price
+- `sz`: trade size when stored in the underlying tick row
+- `side`: trade side when provided by upstream
+- `t`: event timestamp
+- For pre-rollout historical ranges, `sz` may be null or absent
+- For post-rollout ranges, `sz` should contain real stored trade size when the collector captured it
+
+### Bars API
+
+MoonDev bars are aggregated server-side from stored tick history.
+
+```python
+# Aligned multi-symbol history
+bars = api.get_bars(["BTC", "ETH", "SOL"], interval="1h")
+
+# Single symbol
+btc_bars = api.get_bars_symbol("BTC", interval="1h")
+
+# Universe and coverage metadata
+universe = api.get_universe()
+```
+
+**Endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/bars?symbols=BTC,ETH,SOL&interval=1h&startTime=...&endTime=...` | Bulk bars across multiple symbols |
+| `GET /api/bars/{symbol}?interval=1h&startTime=...&endTime=...` | Bars for one symbol |
+| `GET /api/universe` | Tracked symbol list plus coverage metadata |
+
+**Bar fields:**
+- `o`: first trade price in the interval
+- `h`: highest trade price in the interval
+- `l`: lowest trade price in the interval
+- `c`: last trade price in the interval
+- `v`: summed tick size across the interval when size exists in stored ticks
+- `n`: number of ticks or trades contributing to the bar
+
+**Volume behavior:**
+- OHLC is valid across the full stored tick history
+- For historical bars built from pre-rollout price-only ticks, `v` may be `0`
+- For bars built from newly collected trade-stream ticks, `v` reflects summed stored trade size
+- `volume_available: true` means the pipeline supports size-backed volume, not that every historical bar already has it
+
+**Client guidance:**
+- Use `/api/bars` for aligned multi-symbol history
+- Use `/api/ticks/{symbol}` for raw event-level inspection
+- Expect a transition period where OHLC is complete across history, but volume is only complete for post-rollout data
 
 ### Candles API
 
@@ -261,10 +336,15 @@ candles = api.get_candles("DOGE", interval="15m", start_time=0)  # All available
   "h": "0.390",        // High
   "l": "0.380",        // Low
   "c": "0.387",        // Close
-  "v": "0",            // Volume
+  "v": "12.45",        // Summed stored size when available, else may be 0
   "n": 45              // Number of ticks
 }
 ```
+
+Volume transition note:
+- OHLC is complete across the full tick history
+- `v` is only complete where the underlying stored ticks include `sz`
+- Historical pre-rollout candles and bars may therefore show `v = 0` while still having valid OHLC and `n`
 
 ### Python Usage
 
@@ -298,6 +378,16 @@ for fill in fills[:5]:
 candles = api.get_candles("BTC", interval="1m")
 for c in candles[-5:]:
     print(f"O:{c['o']} H:{c['h']} L:{c['l']} C:{c['c']}")
+
+# Raw ticks with size when available
+ticks = api.get_ticks("BTC", duration="10m")
+for t in ticks.get("ticks", [])[:5]:
+    print(t.get("p"), t.get("sz"), t.get("side"))
+
+# New bars layer
+bars = api.get_bars(["BTC", "ETH", "SOL"], interval="1h")
+btc_bars = api.get_bars_symbol("BTC", interval="1h")
+universe = api.get_universe()
 ```
 
 ---
@@ -430,21 +520,24 @@ print(f"Top 10 at risk: {stats['top_10_closest']}")
 
 ---
 
-## HIP3 Tick Data & Candles (NEW!)
+## HIP3 Tick Data & Candles (UPDATED!)
 
-Live tick collection for the **top 10 HIP3 symbols by 24h volume** across xyz, cash, and flx dexes. Volume ranking refreshes every 5 minutes. 30-day data retention. Candles are server-computed from stored ticks.
+**Every HIP3 symbol on HyperLiquid** — currently **136 across 7 dexes** (xyz, flx, vntl, hyna, km, cash, para). New symbols are auto-discovered as HyperLiquid lists them; no config changes needed. Data is served on-demand from the tick DB at request time, so the API scales to thousands of symbols without pre-generating files. 30-day retention, sub-second freshness, ~500ms tick resolution, 24/7 (HyperLiquid is always open).
 
 ### Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/hip3/candles/symbols` | List currently tracked symbols with categories |
-| `GET /api/hip3/ticks/{coin}` | Raw tick data (durations: `10m`, `1h`, `4h`, `24h`, `7d`) |
-| `GET /api/hip3/candles/{coin}` | OHLCV candles (intervals: `1m`, `5m`, `15m`, `1h`, `4h`, `1d`) |
+| `GET /api/hip3/meta` | All symbols with current prices, categories, dex info |
+| `GET /api/hip3/candles/symbols` | List of all 136+ tracked symbols by category |
 | `GET /api/hip3/price/{coin}` | Latest price for a single symbol |
-| `GET /api/hip3/prices` | All latest prices for all tracked symbols |
+| `GET /api/hip3/prices` | All latest prices for all tracked symbols at once |
+| `GET /api/hip3/ticks/{coin}` | Raw ticks (durations: `10m`, `1h`, `4h`, `24h`, `7d`; or `startTime`/`endTime` ms) |
+| `GET /api/hip3/candles/{coin}` | OHLCV candles (intervals: `1m`, `5m`, `15m`, `1h`, `4h`, `1d`) |
 
-**Bare ticker lookups** — pass just `CL` or `USA500` and it resolves to the correct dex automatically. Or use full `dex:ticker` format like `cash:USA500`.
+**Symbol naming** — pass the bare ticker (case-insensitive): `HIMS`, `tsla`, `cl`, `usa500`. Or use the full `dex:ticker` form: `xyz:HIMS`, `cash:USA500`, `hyna:BTC`. Bare tickers resolve automatically when only one dex carries them; for ambiguous tickers (e.g. `GOLD` exists on xyz, flx, and km) pass the full form.
+
+**Categories covered:** stocks, commodities, indices, FX, crypto, pre-IPO (Ventuals: OPENAI, ANTHROPIC, SPACEX), and thematic baskets (MAG7, NUCLEAR, ROBOT).
 
 ### Python Usage
 
@@ -452,35 +545,75 @@ Live tick collection for the **top 10 HIP3 symbols by 24h volume** across xyz, c
 from api import MoonDevAPI
 api = MoonDevAPI()
 
-# List what's being tracked right now
+# List every tracked symbol
 symbols = api.get_hip3_candle_symbols()
-print(symbols['symbols'])  # ['xyz:CL', 'cash:USA500', 'cash:NVDA', ...]
+print(f"{symbols['count']} symbols across categories:", list(symbols['by_category'].keys()))
 
-# Raw ticks — bare ticker or dex:ticker
-ticks = api.get_hip3_raw_ticks("USA500", duration="1h")
-print(f"{ticks['tick_count']} ticks, latest: ${ticks['latest_price']}")
+# Raw ticks — bare ticker or dex:ticker, with optional limit / time window / order
+ticks = api.get_hip3_raw_ticks("HIMS", duration="1h", limit=500, order="desc")
+print(f"{ticks['tick_count']} ticks for {ticks['symbol']}")
 
-# OHLCV candles
-candles = api.get_hip3_candles("SILVER", interval="5m")
+# OHLCV candles — HL convention: t, T, s, i, o, h, l, c, v, n
+candles = api.get_hip3_candles("SILVER", interval="5m", limit=100)
 for c in candles[-3:]:
-    print(f"O:{c['o']} H:{c['h']} L:{c['l']} C:{c['c']}")
+    print(f"O:{c['o']} H:{c['h']} L:{c['l']} C:{c['c']} V:{c['v']}")
 
-# Single price
+# Single price (auto-resolves bare ticker)
 price = api.get_hip3_price("NVDA")
-print(f"NVDA: ${price['price']}")
+print(f"NVDA: ${price['price']} ({price['category']})")
 
-# All prices at once
+# All 136+ prices at once
 prices = api.get_hip3_all_prices()
-for sym, data in prices['prices'].items():
-    print(f"{sym}: ${data['price']} ({data['category']})")
+print(f"Got {len(prices['prices'])} prices across {len(prices['dexes'])} dexes")
 ```
 
-### Key Notes
-- **Top 10 by volume** — symbol list refreshes every 5 min based on 24h notional volume
-- **30-day retention** — historical data goes back up to 30 days
-- **Multi-dex** — symbols span xyz, cash, and flx dexes
-- **~500ms tick resolution** — polling interval
-- **Candles are server-computed** — built from stored ticks, not proxied from Hyperliquid
+### Why this matters
+HIP3 tick data on traditional venues costs thousands per month per symbol. Because we run a HyperLiquid node, every HIP3 symbol — stocks, commodities, FX, indices, crypto, pre-IPO — is available through one API at no marginal cost, 24/7, with sub-second freshness and OHLCV at any interval. The legacy static-file endpoints (`/api/hip3_ticks/{dex}_{symbol}_{duration}.json`) continue to publish for the top 10 symbols for backward compatibility — new integrations should use the on-demand endpoints above.
+
+---
+
+## Polymarket Whales API (NEW!)
+
+**Live whale tracker for Polymarket prediction markets.** A background service holds a persistent WebSocket to `wss://ws-live-data.polymarket.com` and records every trade with USD notional **≥ $1,000** into a database. The endpoints below let you query that log by time window, dollar threshold, wallet, and market. Anything below $1,000 is never collected — `min_usd` has a hard floor.
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/poly/whales` | Recent whale fills, newest first |
+| `GET /api/poly/whales/top-traders` | Leaderboard by wallet (volume desc) |
+| `GET /api/poly/whales/top-markets` | Leaderboard by market (volume desc) |
+| `GET /api/poly/whales/daily` | Per-day rollup of whale activity (charting) |
+| `GET /api/poly/whales/health` | Ingestion service status (no auth) |
+
+**Params** — `min_usd` (default 1000, floor 1000), `days` (default 1, max 365), `wallet` (proxyWallet), `market` (market_slug or event_slug), `side` (`BUY`/`SELL`), `limit`. Standard keys are capped per endpoint (whales: 250, top-traders: 50); Quant Elite (`_qe`) keys get the full set (whales up to 5,000, top-traders up to 1,000).
+
+### Python Usage
+
+```python
+from api import MoonDevAPI
+api = MoonDevAPI()
+
+# Recent whale buys ≥ $5k over the last 7 days
+whales = api.get_poly_whales(min_usd=5000, days=7, side="BUY")
+for t in whales["trades"][:5]:
+    print(f"{t['side']} ${t['usd_amount']:,.0f} | {t['market_title']} | {t['wallet']}")
+
+# Who's moving the most size?
+top = api.get_poly_whale_top_traders(days=7)
+
+# Which markets are whales piling into?
+markets = api.get_poly_whale_top_markets(days=7)
+
+# Daily rollup for charting
+daily = api.get_poly_whale_daily(days=30)
+
+# Confirm the WebSocket is connected and ingestion is fresh (no auth)
+print(api.poly_whales_health())
+```
+
+### Why this matters
+This is the live order-flow log — every large bet on Polymarket as it happens. Pair it with `/api/poly/profitable-traders` (the "who's actually making money" filter, a separate 7-day P&L service) by cross-referencing wallet addresses: the whales endpoint tells you *what* big money is doing right now, profitable-traders tells you *who's* worth following.
 
 ---
 

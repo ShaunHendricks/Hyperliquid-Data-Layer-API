@@ -27,6 +27,9 @@ TICK DATA:
 - /api/ticks/latest.json                - Current prices for all symbols
 - /api/ticks/{symbol}_{timeframe}.json  - Historical ticks (symbols: btc, eth, hype, sol, xrp)
                                           (timeframes: 10m, 1h, 4h, 24h, 7d)
+- /api/universe                         - Tracked perp universe + tick coverage metadata
+- /api/bars                             - Bulk OHLCV-style bars for multiple symbols
+- /api/bars/{symbol}                    - OHLCV-style bars for a single symbol
 
 ORDER FLOW & TRADES (tracking: BTC, ETH, HYPE, SOL, XRP):
 - /api/trades.json                      - Recent 500 trades (real-time)
@@ -60,11 +63,16 @@ HIP3 LIQUIDATIONS (Stocks, Commodities, Indices, FX):
   Categories: Stocks (TSLA, NVDA, AAPL, etc.), Commodities (GOLD, SILVER, OIL),
               Indices (XYZ100), FX (EUR, JPY)
 
-HIP3 MARKET DATA (Multi-Dex: Stocks, Commodities, Indices, FX, Crypto):
-- /api/hip3/meta                             - All 51 symbols from all 4 dexes with current prices
-- /api/hip3_ticks/stats.json                 - Tick collector stats with dex breakdown
-- /api/hip3_ticks/{dex}_{ticker}.json        - Individual tick data (e.g., xyz_tsla.json, hyna_btc.json)
-  Dexes: xyz (27 stocks/commodities/FX), flx (7), hyna (12 crypto), km (5 US indices)
+HIP3 MARKET DATA (Multi-Dex: Stocks, Commodities, Indices, FX, Crypto, Pre-IPO):
+- /api/hip3/meta                             - All HIP3 symbols with current prices (auto-discovers new symbols)
+- /api/hip3/prices                           - Latest prices for ALL 136+ tracked symbols (every dex)
+- /api/hip3/price/{coin}                     - Single-symbol latest price (bare ticker or dex:ticker)
+- /api/hip3/ticks/{coin}                     - Raw ticks for ANY HIP3 symbol (on-demand from tick DB)
+- /api/hip3/candles/{coin}                   - OHLCV candles for ANY HIP3 symbol (computed live)
+- /api/hip3/candles/symbols                  - List of all tracked HIP3 symbols (currently 136)
+- /api/hip3_ticks/stats.json                 - Legacy collector stats
+- /api/hip3_ticks/{dex}_{ticker}.json        - Legacy static-file ticks (top 10 only, kept for back-compat)
+  Dexes: xyz, flx, vntl, hyna, km, cash, para (7 total — every HIP3 dex on HyperLiquid)
 
 HYPERLIQUID USER DATA:
 - get_user_positions(address)           - Get positions via Hyperliquid API (direct)
@@ -96,6 +104,15 @@ HLP (HYPERLIQUIDITY PROVIDER) DATA:
 - /api/hlp/correlation                  - Delta-price correlation by coin
 - /api/hlp/funding/hip3                 - HIP3 funding rates (stocks, commodities, ETFs)
 
+POLYMARKET:
+- /api/poly/profitable-traders          - Profitable Polymarket traders sorted by 7-day P&L ($300+ threshold)
+- /api/poly/whales                      - Live whale trade log ($1,000+ fills, newest first)
+- /api/poly/whales/top-traders          - Whale leaderboard by wallet
+- /api/poly/whales/top-markets          - Whale leaderboard by market
+- /api/poly/whales/daily                - Per-day rollup of whale activity (charting)
+- /api/poly/whales/health               - Whale ingestion service status (no auth)
+- /api/poly/health                      - Polymarket service health check (no auth)
+
 Authentication:
 --------------
 - Header (recommended): X-API-Key: YOUR_API_KEY
@@ -123,12 +140,12 @@ class MoonDevAPI:
         self.headers = {'X-API-Key': self.api_key} if self.api_key else {}
         self.session = requests.Session()
 
-    def _get(self, endpoint, auth_required=True):
+    def _get(self, endpoint, auth_required=True, params=None):
         """Make GET request to API"""
         url = f"{self.base_url}{endpoint}"
         headers = self.headers if auth_required else {}
 
-        response = self.session.get(url, headers=headers, timeout=30)
+        response = self.session.get(url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         return response
 
@@ -288,7 +305,12 @@ class MoonDevAPI:
                 - duration: Time window
                 - tick_count: Number of ticks returned
                 - latest_price: Most recent price
-                - ticks: List of tick objects [{t, p, dt}, ...]
+                - ticks: List of tick objects [{t, p, sz?, side?, dt}, ...]
+
+        Tick payload notes:
+            - Newer post-rollout rows may include real trade size in `sz`
+            - `side` may be present when the upstream trade stream provides it
+            - Older historical rows may be price-only and omit `sz` / `side`
         """
         params = [f"duration={duration}", f"limit={limit}"]
         if start_time is not None:
@@ -297,6 +319,76 @@ class MoonDevAPI:
             params.append(f"endTime={end_time}")
         query = "?" + "&".join(params)
         response = self._get(f"/api/ticks/{symbol.upper()}{query}")
+        return response.json()
+
+    def get_universe(self):
+        """
+        Get the tracked symbol universe and tick coverage metadata.
+
+        Returns:
+            dict from /api/universe with the active symbol list and metadata.
+        """
+        response = self._get("/api/universe")
+        return response.json()
+
+    def get_bars(self, symbols=None, interval="1h", start_time=None, end_time=None, limit=None):
+        """
+        Get OHLCV-style bars for one or more symbols from the new bars endpoint.
+
+        Args:
+            symbols: Optional list/tuple of symbols or comma-separated string
+            interval: Bar interval, typically 1m/5m/15m/1h/4h/1d depending on service support
+            start_time: Start timestamp in ms
+            end_time: End timestamp in ms
+            limit: Optional max bars to return
+
+        Returns:
+            dict from /api/bars
+
+        Note:
+            The server-side bars implementation currently derives bars from tick data.
+            Volume is expected to be "0" for now, while "n" represents tick count.
+        """
+        params = [f"interval={interval}"]
+        if symbols:
+            if isinstance(symbols, (list, tuple, set)):
+                symbol_str = ",".join(str(s).upper() for s in symbols)
+            else:
+                symbol_str = str(symbols)
+            params.append(f"symbols={symbol_str}")
+        if start_time is not None:
+            params.append(f"startTime={start_time}")
+        if end_time is not None:
+            params.append(f"endTime={end_time}")
+        if limit is not None:
+            params.append(f"limit={limit}")
+        query = "?" + "&".join(params) if params else ""
+        response = self._get(f"/api/bars{query}")
+        return response.json()
+
+    def get_bars_symbol(self, symbol, interval="1h", start_time=None, end_time=None, limit=None):
+        """
+        Get OHLCV-style bars for a single symbol from /api/bars/{symbol}.
+
+        Args:
+            symbol: Requested symbol, e.g. BTC
+            interval: Bar interval
+            start_time: Start timestamp in ms
+            end_time: End timestamp in ms
+            limit: Optional max bars to return
+
+        Returns:
+            dict or list, depending on server response format.
+        """
+        params = [f"interval={interval}"]
+        if start_time is not None:
+            params.append(f"startTime={start_time}")
+        if end_time is not None:
+            params.append(f"endTime={end_time}")
+        if limit is not None:
+            params.append(f"limit={limit}")
+        query = "?" + "&".join(params) if params else ""
+        response = self._get(f"/api/bars/{symbol.upper()}{query}")
         return response.json()
 
     # ==================== ORDER FLOW & TRADES ====================
@@ -1047,25 +1139,29 @@ class MoonDevAPI:
     # ==================== HIP3 MARKET DATA (Multi-Dex) ====================
     def get_hip3_meta(self, include_delisted=False):
         """
-        Get all HIP3 symbols from all 4 dexes with current prices.
+        Get all HIP3 symbols across every dex with current prices.
 
-        51 symbols across 4 dexes:
-            - xyz (27): Stocks, commodities, FX, indices (TSLA, NVDA, GOLD, EUR, XYZ100)
-            - flx (7): Stocks, commodities, XMR (XMR, GOLD, SILVER, OIL)
-            - hyna (12): Crypto (BTC, ETH, HYPE, SOL, FARTCOIN, PUMP)
-            - km (5): US indices (US500, USTECH, SMALL2000)
+        Auto-discovers symbols as HyperLiquid adds them. Currently 136+ symbols
+        across 7 dexes:
+            - xyz (XYZ): Stocks, commodities, FX, indices (TSLA, NVDA, GOLD, EUR)
+            - flx (Felix): Stocks, commodities, crypto (XMR, GOLD, SILVER, OIL)
+            - vntl (Ventuals): Pre-IPO + thematic baskets (OPENAI, ANTHROPIC, MAG7, SPACEX)
+            - hyna (HyENA): Crypto perps (BTC, ETH, HYPE, SOL, PUMP, FARTCOIN)
+            - km (Kinetiq): Asia / US indices (US500, USTECH, TENCENT, XIAOMI)
+            - cash (dreamcash): Stocks, commodities, indices
+            - para (Paragon): Specialty markets (TOTAL2, etc.)
 
         Args:
             include_delisted: If True, includes delisted symbols (default: False)
 
         Returns:
             dict with:
-                - count: Total number of symbols
-                - dexes: Dict organized by dex prefix
+                - total_symbols: Total number of symbols
+                - dexes: List of dex prefixes
+                - dex_summary: Per-dex active/delisted counts
                 - symbols: List of all symbol objects with prices
-                - categories: Breakdown by category (stocks, indices, commodities, fx, crypto)
 
-        Symbol format: {dex}:{ticker} (e.g., xyz:TSLA, hyna:BTC, km:US500)
+        Symbol format: {dex}:{ticker} (e.g., xyz:TSLA, hyna:BTC, cash:USA500)
         """
         params = "?include_delisted=true" if include_delisted else ""
         response = self._get(f"/api/hip3/meta{params}")
@@ -1073,94 +1169,125 @@ class MoonDevAPI:
 
     def get_hip3_tick_stats(self):
         """
-        Get HIP3 tick collector statistics with dex breakdown.
+        [LEGACY] Get HIP3 tick collector stats from the old static-file pipeline.
+
+        Kept for backward compatibility with the top-10-by-volume static files.
+        New consumers should use get_hip3_meta() / get_hip3_all_prices() instead.
 
         Returns:
-            dict with:
-                - total_symbols: Total symbols being tracked
-                - total_ticks: Total ticks collected
-                - by_dex: Breakdown by dex (xyz, flx, hyna, km)
-                - by_category: Breakdown by category
-                - last_update: Last collection timestamp
+            dict with total_symbols, total_ticks, by_dex, by_category, last_update
         """
         response = self._get("/api/hip3_ticks/stats.json")
         return response.json()
 
     def get_hip3_ticks(self, dex, ticker):
         """
-        Get raw tick data for a specific HIP3 symbol.
+        [LEGACY] Get raw tick data from the old static-file endpoint.
+
+        Only top-10 symbols by volume are published this way. For full coverage
+        of all 136+ HIP3 symbols, use get_hip3_raw_ticks() instead.
 
         Args:
             dex: Dex prefix (xyz, flx, hyna, km)
-            ticker: Symbol ticker (tsla, btc, gold, us500, etc.) - case insensitive
+            ticker: Symbol ticker (tsla, btc, gold, us500, etc.) — case insensitive
 
         Returns:
             dict/list with tick data for the symbol
 
         Examples:
             get_hip3_ticks("xyz", "tsla")   # Tesla stock
-            get_hip3_ticks("xyz", "gold")   # Gold commodity
             get_hip3_ticks("hyna", "btc")   # Bitcoin
             get_hip3_ticks("km", "us500")   # S&P 500 index
         """
         response = self._get(f"/api/hip3_ticks/{dex.lower()}_{ticker.lower()}.json")
         return response.json()
 
-    # ==================== HIP3 TICK DATA & CANDLES (Top 10 by Volume) ====================
-    # 🌙 Moon Dev — New HIP3 candle/tick endpoints
+    # ==================== HIP3 ON-DEMAND (All Symbols, All Dexes) ====================
+    # 🌙 Moon Dev — Full HIP3 coverage: 136+ symbols across 7 dexes, served live from
+    # the tick DB. Auto-discovers new symbols as HyperLiquid adds them. 30-day retention.
 
     def get_hip3_candle_symbols(self):
         """
-        List all currently tracked HIP3 symbols (top 10 by 24h volume).
-        Refreshes every 5 minutes. Spans xyz, cash, flx dexes.
+        List ALL tracked HIP3 symbols (currently 136 across 7 dexes).
+
+        Auto-discovers new symbols as HyperLiquid lists them — no config needed.
 
         Returns:
-            dict with symbols list, count, intervals, by_category
+            dict with:
+                - symbols: List of dex-qualified symbols (e.g., 'xyz:TSLA', 'hyna:BTC')
+                - count: Total tracked
+                - intervals: Supported candle intervals
+                - by_category: Symbols grouped by category (stocks, commodities,
+                  indices, fx, crypto, pre_ipo, other)
         """
         response = self._get("/api/hip3/candles/symbols")
         return response.json()
 
-    def get_hip3_raw_ticks(self, coin, duration="1h"):
+    def get_hip3_raw_ticks(self, coin, duration="1h", limit=None,
+                           start_time=None, end_time=None, order=None):
         """
-        Get raw tick data for a HIP3 symbol from the tick collector.
+        Get raw ticks for ANY HIP3 symbol — served live from the tick DB.
 
         Args:
-            coin: Symbol — bare ticker (CL, SILVER) or dex:ticker (cash:USA500)
-            duration: Time window — 10m, 1h, 4h, 24h, 7d
+            coin: Symbol — bare ticker (HIMS, TSLA, GOLD) or dex:ticker (xyz:HIMS,
+                  cash:USA500, hyna:BTC). Bare tickers auto-resolve to the right dex.
+            duration: Time window — 10m, 1h, 4h, 24h, 7d (default 1h)
+            limit: Max ticks to return (default 10000)
+            start_time: Optional explicit start (Unix ms) — overrides duration
+            end_time: Optional explicit end (Unix ms)
+            order: 'asc' (oldest-first, default) or 'desc' (newest-first)
 
         Returns:
-            dict with symbol, category, tick_count, latest_price, ticks[]
+            dict with symbol, category, market_type, duration, tick_count, order,
+            ticks[]. Each tick has timestamp, price, size, side, datetime.
+
+        Notes:
+            - Sub-second freshness, 30-day retention, ~500ms tick resolution
+            - 24/7 — HyperLiquid is always open, no market-hours gaps
         """
-        response = self._get(f"/api/hip3/ticks/{coin}", params={"duration": duration})
+        params = {"duration": duration}
+        if limit is not None: params["limit"] = limit
+        if start_time is not None: params["startTime"] = start_time
+        if end_time is not None: params["endTime"] = end_time
+        if order is not None: params["order"] = order
+        response = self._get(f"/api/hip3/ticks/{coin}", params=params)
         return response.json()
 
-    def get_hip3_candles(self, coin, interval="5m", start_time=None, end_time=None):
+    def get_hip3_candles(self, coin, interval="5m", limit=None,
+                         start_time=None, end_time=None):
         """
-        Get OHLCV candles for a HIP3 symbol, computed server-side from stored ticks.
+        OHLCV candles for ANY HIP3 symbol, computed live from stored ticks.
 
         Args:
-            coin: Symbol — bare ticker (SILVER) or dex:ticker (cash:USA500)
-            interval: Candle size — 1m, 5m, 15m, 1h, 4h, 1d
-            start_time: Optional start timestamp (Unix ms)
-            end_time: Optional end timestamp (Unix ms)
+            coin: Symbol — bare ticker (SILVER, NVDA) or dex:ticker (cash:USA500)
+            interval: 1m, 5m, 15m, 1h, 4h, 1d
+            limit: Max candles to return (default 200)
+            start_time: Optional start (Unix ms)
+            end_time: Optional end (Unix ms)
 
         Returns:
-            list of candle dicts with t, T, s, i, o, h, l, c, v, n
+            list of candles in HL convention: {t, T, s, i, o, h, l, c, v, n}
+            - t/T: candle start/end (ms)
+            - s/i: symbol/interval
+            - o/h/l/c: open/high/low/close
+            - v: notional volume traded
+            - n: tick count in interval
         """
         params = {"interval": interval}
-        if start_time:
-            params["startTime"] = start_time
-        if end_time:
-            params["endTime"] = end_time
+        if limit is not None: params["limit"] = limit
+        if start_time is not None: params["startTime"] = start_time
+        if end_time is not None: params["endTime"] = end_time
         response = self._get(f"/api/hip3/candles/{coin}", params=params)
         return response.json()
 
     def get_hip3_price(self, coin):
         """
-        Get latest price for a single HIP3 symbol.
+        Latest price for a single HIP3 symbol.
 
         Args:
-            coin: Symbol — bare ticker (NVDA) or dex:ticker (cash:NVDA)
+            coin: Symbol — bare ticker (NVDA, HIMS) or dex:ticker (xyz:HIMS).
+                  Bare tickers resolve automatically; for ambiguous tickers
+                  (GOLD on xyz/flx/km) use the full dex:ticker form.
 
         Returns:
             dict with symbol, price, category, market_type, timestamp
@@ -1170,12 +1297,148 @@ class MoonDevAPI:
 
     def get_hip3_all_prices(self):
         """
-        Get all latest prices for all tracked HIP3 symbols (top 10 by volume).
+        Latest prices for ALL tracked HIP3 symbols (currently 136 across 7 dexes).
 
         Returns:
-            dict with generated_at, market_type, mode, dexes, prices{}
+            dict with:
+                - generated_at: ISO timestamp
+                - market_type: 'HIP3'
+                - mode: 'all_symbols_on_demand'
+                - dexes: List of dexes covered
+                - prices: { 'xyz:TSLA': {...}, 'hyna:BTC': {...}, ... }
         """
         response = self._get("/api/hip3/prices")
+        return response.json()
+
+    # ==================== POLYMARKET ====================
+    def get_poly_profitable_traders(self):
+        """
+        Get profitable Polymarket traders sorted by 7-day P&L (highest first).
+
+        Discovers traders from BTC 5-minute prediction markets and trending market
+        big trades ($500+). Only traders with $300+ 7-day P&L are included.
+
+        Access tiers:
+            - Quant Elite (_qe) keys: Full list of all profitable traders
+            - Standard keys: Top 25 traders only
+
+        Returns:
+            dict with:
+                - total: Number of traders in response
+                - full_list: True if showing all traders (QE key)
+                - updated_at: ISO 8601 timestamp
+                - stats: Service health (wallets_checked, queue_depth, uptime_minutes)
+                - traders: List of trader dicts sorted by pnl_7d descending
+                    Each trader has: wallet, polymarket_link, pnl_7d, volume_7d,
+                    trades_7d, redeems_7d, discovered_at, source
+
+        Note: As of 2026-04-14, `name` and `display_name` fields were removed
+        (Polymarket pseudonyms were unreliable). Use `wallet` as the identifier.
+        `polymarket_link` is now wallet-based: https://polymarket.com/<wallet>
+        """
+        response = self._get("/api/poly/profitable-traders")
+        return response.json()
+
+    def poly_health(self):
+        """Check Polymarket service health (no auth required)"""
+        response = self._get("/api/poly/health", auth_required=False)
+        return response.json()
+
+    # ==================== POLYMARKET WHALES ====================
+    def get_poly_whales(self, min_usd=1000, days=1, wallet=None, market=None,
+                        side=None, limit=250):
+        """
+        Get the live Polymarket whale trade log (individual fills, newest first).
+
+        A background service holds a persistent WebSocket to Polymarket and
+        records every trade with USD notional >= $1,000. Anything below $1,000
+        is never collected, so min_usd has a hard floor of 1000.
+
+        Args:
+            min_usd: Minimum trade size in USD (floor $1,000). Default 1000.
+            days:    Lookback window in days. Max 365. Default 1.
+            wallet:  Filter to a single proxyWallet address. Default None.
+            market:  Filter by market_slug or event_slug. Default None.
+            side:    'BUY' or 'SELL'. Default None (both).
+            limit:   Max rows. Standard keys capped at 250, _qe keys up to 5,000.
+
+        Returns:
+            dict with the whale fills. Each trade includes: ts, wallet,
+            pseudonym, market_title, market_slug, event_slug, outcome, side,
+            price, size, usd_amount, tx_hash.
+        """
+        params = {"min_usd": min_usd, "days": days, "limit": limit}
+        if wallet:
+            params["wallet"] = wallet
+        if market:
+            params["market"] = market
+        if side:
+            params["side"] = side
+        response = self._get("/api/poly/whales", params=params)
+        return response.json()
+
+    def get_poly_whale_top_traders(self, min_usd=1000, days=7, limit=100):
+        """
+        Get the Polymarket whale leaderboard by wallet (sorted by volume desc).
+
+        Args:
+            min_usd: Minimum trade size in USD. Default 1000.
+            days:    Lookback window in days. Default 7.
+            limit:   Standard keys capped at 50, _qe keys up to 1,000. Default 100.
+
+        Returns:
+            dict with per-wallet aggregates: trade_count, total_volume,
+            biggest_trade, markets_traded, last_trade_ts.
+        """
+        params = {"min_usd": min_usd, "days": days, "limit": limit}
+        response = self._get("/api/poly/whales/top-traders", params=params)
+        return response.json()
+
+    def get_poly_whale_top_markets(self, min_usd=1000, days=7, limit=100):
+        """
+        Get the Polymarket whale leaderboard by market (sorted by volume desc).
+
+        Args:
+            min_usd: Minimum trade size in USD. Default 1000.
+            days:    Lookback window in days. Default 7.
+            limit:   Max rows. Default 100.
+
+        Returns:
+            dict with per-market aggregates: market_slug, event_slug,
+            market_title, whale_trades, whale_volume, unique_whales,
+            biggest_trade.
+        """
+        params = {"min_usd": min_usd, "days": days, "limit": limit}
+        response = self._get("/api/poly/whales/top-markets", params=params)
+        return response.json()
+
+    def get_poly_whale_daily(self, min_usd=1000, days=30):
+        """
+        Get the per-day rollup of Polymarket whale activity (use for charting).
+
+        Args:
+            min_usd: Minimum trade size in USD. Default 1000.
+            days:    Lookback window in days. Default 30.
+
+        Returns:
+            dict with one row per UTC day: trade_count, total_volume,
+            biggest_trade, smallest_trade, avg_trade, unique_whales,
+            unique_markets.
+        """
+        params = {"min_usd": min_usd, "days": days}
+        response = self._get("/api/poly/whales/daily", params=params)
+        return response.json()
+
+    def poly_whales_health(self):
+        """
+        Check the Polymarket whale ingestion service status (no auth required).
+
+        Returns live counters: trades_seen, whales_queued, whales_written,
+        biggest_usd, biggest_market, ws_connects, ws_disconnects,
+        last_trade_at, queue_depth, uptime_minutes. Useful for confirming the
+        WebSocket is connected and ingestion is fresh.
+        """
+        response = self._get("/api/poly/whales/health", auth_required=False)
         return response.json()
 
 

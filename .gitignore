@@ -54,7 +54,7 @@ logs/
 # AI Swarm Agent data (results may contain API responses)
 ai_agents/data/
 
-# Example data output (CSVs, etc.) - keep repo clean
+# Example data output (CSVs, JSONL tick streams, etc.) - keep repo clean
 examples/data/
 
 # Moon Dev's local data viewer
@@ -62,3 +62,6 @@ data_viewer.py
 
 # Arena (internal - not for public repo)
 arena/
+
+# Moon Dev's private AAVE liquidation ladder
+aave_positions.py

@@ -31,7 +31,10 @@ Each file in this folder is a standalone Python script that demonstrates one sec
 | `21_hip3_market_data.py` | HIP3 Data | OHLCV candles & tick data for 33 TradFi assets |
 | `24_position_snapshots.py` | Position Snapshots | Positions near liquidation - squeeze signals |
 | `25_ai_chat.py` | AI Chat | OpenAI-compatible AI API - drop-in replacement |
-| `26_hip3_funding.py` | HIP3 Funding | **NEW!** Funding rates for stocks, commodities, ETFs across dexes |
+| `26_hip3_funding.py` | HIP3 Funding | Funding rates for stocks, commodities, ETFs across dexes |
+| `35_ohlcv_data.py` | OHLCV Data | Universe + single-symbol and multi-symbol bars from the new bars layer |
+| `35_btc_tick_stream.py` | BTC Tick Stream | Live BTC tick tape with rolling stats and JSONL sink for bots |
+| `34_polymarket_traders.py` | Polymarket Traders | **NEW!** Profitable Polymarket traders by 7-day P&L, discovery sources |
 
 ---
 
@@ -232,7 +235,7 @@ Live tick collection for the top 10 HIP3 symbols by 24h volume across xyz, cash,
   "tick_count": 1842,
   "latest_price": 6780.20,
   "ticks": [
-    {"t": 1741611600500, "p": 6779.97, "dt": "2026-03-10T13:12:33+00:00"}
+    {"t": 1741611600500, "p": 6779.97, "sz": 2.5, "side": "B", "dt": "2026-03-10T13:12:33+00:00"}
   ]
 }
 ```
@@ -267,6 +270,8 @@ Live tick collection for the top 10 HIP3 symbols by 24h volume across xyz, cash,
 - **Multi-dex** — symbols span xyz, cash, and flx dexes
 - **~500ms tick resolution** — polling interval for tick collection
 - **Candles are server-computed** — built from stored tick data, not proxied from Hyperliquid
+- **Tick size rollout** — newly ingested rows may include `sz` and `side`; older rows may be price-only
+- **Volume transition** — OHLC is valid across history, while `v` is only complete where stored ticks include size
 
 ### TICK DATA
 
@@ -278,6 +283,28 @@ Live tick collection for the top 10 HIP3 symbols by 24h volume across xyz, cash,
 
 **Symbols:** btc, eth, hype, sol, xrp
 **Timeframes:** 10m, 1h, 4h, 24h, 7d
+
+Newly ingested tick rows may include:
+- `p`: trade price
+- `sz`: trade size
+- `side`: trade side when provided upstream
+- `t`: event timestamp
+
+Historical rows collected before the size rollout may not contain `sz` or `side`.
+
+### BARS & UNIVERSE
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/universe` | Tracked symbol universe plus tick coverage metadata |
+| `GET /api/bars` | Bulk OHLCV-style bars for multiple symbols |
+| `GET /api/bars/{symbol}` | OHLCV-style bars for a single symbol |
+
+Bar behavior:
+- `o`, `h`, `l`, and `c` are built from stored tick history
+- `v` is summed stored tick size where size exists
+- `n` is the number of ticks or trades contributing to the bar
+- Pre-rollout historical bars may have `v = 0` while still having valid OHLC
 
 ### ORDER FLOW & TRADES
 
@@ -322,7 +349,21 @@ Live tick collection for the top 10 HIP3 symbols by 24h volume across xyz, cash,
 | `GET /api/hlp/correlation` | Delta-price correlation by coin |
 | `GET /api/hlp/funding/hip3` | HIP3 funding rates (stocks, commodities, ETFs) |
 
-### AI CHAT API (NEW!)
+### POLYMARKET
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/poly/profitable-traders` | Profitable Polymarket traders sorted by 7-day P&L ($300+ threshold) |
+| `GET /api/poly/whales` | Live whale trade log — every Polymarket fill $1,000+ (newest first) |
+| `GET /api/poly/whales/top-traders` | Whale leaderboard by wallet (volume, trade count, biggest trade) |
+| `GET /api/poly/whales/top-markets` | Whale leaderboard by market (volume, unique whales, biggest trade) |
+| `GET /api/poly/whales/daily` | Per-day rollup of whale activity (charting) |
+| `GET /api/poly/whales/health` | Whale ingestion service status (no auth) |
+| `GET /api/poly/health` | Polymarket service health check (no auth) |
+
+**Access tiers:** Quant Elite (`_qe`) keys get the full result set. Standard keys are capped per endpoint (profitable-traders: top 25; whales: 250 rows; top-traders: 50).
+
+### AI CHAT API
 
 OpenAI-compatible drop-in replacement. No need for OpenAI or Anthropic API keys!
 
@@ -503,7 +544,19 @@ btc_snaps = api.get_position_snapshots("BTC", hours=24)           # BTC position
 eth_risky = api.get_position_snapshots("ETH", max_distance_pct=5) # ETH <5% from liq
 stats = api.get_position_snapshot_stats(hours=12)                 # Aggregate stats
 
-# === AI CHAT API (NEW!) ===
+# === POLYMARKET ===
+traders = api.get_poly_profitable_traders()            # Profitable traders by 7-day P&L
+for t in traders["traders"]:
+    print(f"{t['wallet']}: ${t['pnl_7d']:,.2f} P&L | {t['polymarket_link']}")
+
+# === POLYMARKET WHALES (live $1,000+ fills) ===
+whales = api.get_poly_whales(min_usd=5000, days=7, side="BUY")  # Recent whale buys
+top_wallets = api.get_poly_whale_top_traders(days=7)            # Leaderboard by wallet
+top_markets = api.get_poly_whale_top_markets(days=7)            # Leaderboard by market
+daily = api.get_poly_whale_daily(days=30)                       # Per-day rollup (charting)
+print(api.poly_whales_health())                                 # WS status, no auth
+
+# === AI CHAT API ===
 # Use OpenAI SDK as drop-in replacement:
 from openai import OpenAI
 client = OpenAI(base_url="https://api.moondev.com/api/ai/v1", api_key="YOUR_KEY")
