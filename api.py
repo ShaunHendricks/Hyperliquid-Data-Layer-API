@@ -89,6 +89,12 @@ MARKET DATA (replaces Hyperliquid rate-limited calls!):
 - /api/fills/{address}                  - Trade fills in Hyperliquid-compatible format
 - /api/candles/{coin}                   - OHLCV candles (1m, 5m, 15m, 1h, 4h, 1d)
 
+HYPERLIQUID DIRECT-PROXY (drop-in for HL SDK - tries local node, falls back to public):
+- /api/hl/clearinghouse/{address}       - Alias of /api/account - replaces info.user_state()
+                                          (optional: ?dex=<name> for a perp dex; empty = main)
+- /api/hl/open_orders/{address}         - Resting orders - replaces info.open_orders()
+                                          (optional: ?coin=BTC server-side filter)
+
 HLP (HYPERLIQUIDITY PROVIDER) DATA:
 - /api/hlp/positions                    - All 7 HLP strategy positions + combined net exposure
                                           (optional: ?include_strategies=false for summary only)
@@ -678,6 +684,54 @@ class MoonDevAPI:
         """
         params = f"?limit={limit}" if limit != 100 else ""
         response = self._get(f"/api/fills/{address}{params}")
+        return response.json()
+
+    # ==================== HYPERLIQUID DIRECT-PROXY (drop-in for HL SDK) ====================
+    def get_hl_clearinghouse(self, address, dex=""):
+        """
+        Moon Dev's drop-in replacement for Hyperliquid's info.user_state(address).
+
+        Low-latency, retry-backed proxy to HL's /info clearinghouseState. Tries the
+        local HL node first and transparently falls back to api.hyperliquid.xyz on
+        failure - so a 200 ALWAYS means real data, never a silent zero from upstream.
+
+        This is an alias of get_account() / /api/account/{address} - identical body.
+
+        Args:
+            address: Wallet / sub-account / vault. Case-insensitive, 0x optional.
+            dex: Optional perp dex name. Empty string = main perp.
+
+        Returns:
+            dict with marginSummary, crossMarginSummary, assetPositions, withdrawable,
+            timestamp (ms), and source ("local" or "public"). Numeric values are
+            HL-native strings - cast client-side.
+        """
+        params = {"dex": dex} if dex else None
+        response = self._get(f"/api/hl/clearinghouse/{address}", params=params)
+        return response.json()
+
+    def get_hl_open_orders(self, address, coin=""):
+        """
+        Moon Dev's drop-in replacement for Hyperliquid's info.open_orders(address).
+
+        Returns all resting orders for the address. Tries the local HL node first and
+        falls back to api.hyperliquid.xyz - a 200 with orders=[] means genuinely flat,
+        never a silent [] on upstream failure. Use that as the signal to skip cancel loops.
+
+        Args:
+            address: Wallet / sub-account / vault. Case-insensitive, 0x optional.
+            coin: Optional server-side coin filter (e.g. "BTC"). Case-insensitive.
+
+        Returns:
+            dict with:
+                - address: the queried address
+                - timestamp: ms since epoch
+                - orders: list of resting orders (coin, oid, side, limitPx, sz,
+                          origSz, reduceOnly, orderType, tif, cloid, ...)
+                - source: "local" or "public"
+        """
+        params = {"coin": coin} if coin else None
+        response = self._get(f"/api/hl/open_orders/{address}", params=params)
         return response.json()
 
     def get_candle_symbols(self):

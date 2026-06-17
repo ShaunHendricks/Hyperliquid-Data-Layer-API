@@ -35,6 +35,7 @@ Each file in this folder is a standalone Python script that demonstrates one sec
 | `35_ohlcv_data.py` | OHLCV Data | Universe + single-symbol and multi-symbol bars from the new bars layer |
 | `35_btc_tick_stream.py` | BTC Tick Stream | Live BTC tick tape with rolling stats and JSONL sink for bots |
 | `34_polymarket_traders.py` | Polymarket Traders | **NEW!** Profitable Polymarket traders by 7-day P&L, discovery sources |
+| `36_hl_direct_proxy.py` | HL Direct-Proxy | **NEW!** Drop-in `info.user_state` + `info.open_orders` — no 429s, local node w/ public fallback |
 
 ---
 

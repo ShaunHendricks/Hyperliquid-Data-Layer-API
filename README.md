@@ -181,6 +181,8 @@ These endpoints replace Hyperliquid's rate-limited API calls. All requests go th
 | `GET /api/price/{coin}` | - | Quick single-coin price with bid/ask/spread |
 | `GET /api/orderbook/{coin}` | `l2Book` | Full L2 orderbook (~20 levels each side) |
 | `GET /api/account/{address}` | `clearinghouseState` | Full account state for any wallet |
+| `GET /api/hl/clearinghouse/{address}` | `info.user_state()` | Direct proxy alias of `/api/account` (try local node, fall back to public) |
+| `GET /api/hl/open_orders/{address}` | `info.open_orders()` | All resting orders (optional `?coin=BTC` filter) |
 | `GET /api/fills/{address}` | `userFills` | Trade fills in Hyperliquid-compatible format |
 | `GET /api/candles/{coin}` | `candleSnapshot` | OHLCV candles (1m, 5m, 15m, 1h, 4h, 1d) |
 | `GET /api/candles/symbols` | - | List all 80 tracked symbols |
